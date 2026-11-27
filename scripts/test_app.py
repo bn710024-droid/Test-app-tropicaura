@@ -15,7 +15,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         pass
 
 socketserver.TCPServer.allow_reuse_address = True
-httpd = socketserver.TCPServer(('127.0.0.1', 8899), Handler)
+httpd = socketserver.ThreadingTCPServer(('127.0.0.1', 8899), Handler)
 threading.Thread(target=httpd.serve_forever, daemon=True).start()
 
 RESULTS = []

@@ -325,9 +325,9 @@ export function ProfileScreen() {
           </Text>
           <Text style={[styles.addressText, { marginTop: 10 }]}>
             {catalogOrigin === 'exemple'
-              ? 'Catalogue : données d’exemple embarquées dans l’application. La tour de contrôle de notre équipe n’est pas connectée ; les produits, prix et offres affichés sont à remplacer par les données réelles.'
+              ? 'Catalogue : données d’exemple embarquées dans l’application. La base de contrôle de notre équipe n’est pas encore connectée ; les produits, prix et offres affichés sont à remplacer par les données réelles.'
               : catalogOrigin === 'base'
-                ? `Catalogue : reçu de la tour de contrôle${catalogExample ? ' (données d’exemple)' : ''}, relu toutes les minutes.`
+                ? `Catalogue : reçu de la base de contrôle${catalogExample ? ' (données d’exemple)' : ''}, relu toutes les minutes.`
                 : 'Catalogue : dernière copie reçue, conservée sur cet appareil (réseau indisponible).'}
           </Text>
         </View>
