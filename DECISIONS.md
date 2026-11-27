@@ -28,7 +28,7 @@ Une ligne par décision : décision — raison.
 - `test_app.py` : serveur de test passé en multi-fil — l'ouverture dépassait parfois 30 s ; aucune vérification modifiée.
 - Position pour le livreur rafraîchie sans redemander l'autorisation (`getForegroundPermissionsAsync`) — le client l'a accordée à la commande ; refus = rien n'est envoyé.
 - Références de commande : `PR-` + 6 caractères sans O/0/I/1 — les 4 chiffres se répétaient d'un client à l'autre.
-- Statistiques multi-devises de la tour laissées en l'état (documentées) — refonte de 15 affichages trop large pour la nuit, risque de casser la tour.
+- Statistiques de la tour : finalement corrigées a minima (sommes en € sur les seules commandes en €, mention des autres) — « devises jamais additionnées » est un invariant.
 - Publications photo et messages de suivi non affichés — ce sont de nouveaux écrans / emplacements (design), décision au propriétaire.
 - Tour : liste « Pays desservis par le GP » recopiée dans un réglage public scellé (`settings.gp`) — les réglages GP sont chiffrés (numéro du GP) et le catalogue est public.
 - Tour : montants des commandes affichés dans leur devise (F CFA) — une commande en XOF s'affichait en €.
