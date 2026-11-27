@@ -37,12 +37,15 @@ Ce fichier garde la trace de chaque passage de modifications. Nouvelles entrées
    kicker « Campagne à venir · dès … », titre serif + accent or italique, bouton « Voir … »,
    points de pagination). Les filtres de rayons sont montés tout en haut de l'accueil
    téléphone, juste sous la barre recherche/logo/panier.
-7. **Tour de contrôle** : raccordements préparés et indépendants dans `lib/config.ts`
-   (`CATALOG_ENDPOINT`, `TEAM_ENDPOINT`, `CONTROL_ENDPOINT`, `VIDEOS_ENDPOINT`, tous `null`
-   aujourd'hui) + état visible dans le Profil (carte « Tour de contrôle ») ; le catalogue
-   publié (`lib/catalog/schema.ts`, `schema: 1`) peut régler produits, photos, prix, unités,
-   offres, règles, **formats/emballages** et campagnes sans toucher aux écrans ; rien n'est
-   connecté ni testé contre un vrai serveur pour l'instant.
+7. **Tour de contrôle** : UNE adresse, `EXPO_PUBLIC_CONTROL_TOWER_URL` (`lib/config.ts` en
+   dérive tous les raccordements). L'app lit `<tour>/api/catalog?v=2` (`schema: 2`, format de
+   `lib/catalog/schema.ts` + `categories`, `filters`, `payments`, `productRequest`,
+   `countryPrices`) à l'ouverture / 60 s / premier plan ; envoie commandes, demandes pro,
+   introuvables (`/api/orders`) et réactions vidéo (`?public=reactions`) ; relit les statuts
+   (`/api/orders?compte=`). Sans adresse : catalogue d'exemple, rien n'est envoyé. Le correctif
+   `app-tropicaura.patch` de la tour est OBSOLÈTE : ne jamais l'appliquer.
+   Tests : `scripts/test_app.py` (sans tour) et `scripts/test_tower_live.py` (avec la tour
+   locale `npm run local`).
 8. **Honnêteté des données** : aucune donnée commerciale inventée sans être marquée
    (puce « Données de démonstration », note sous les formats, `example: true`, `demo: true`) ;
    aucun paiement / envoi réel présenté comme tel.
@@ -66,6 +69,54 @@ Ce fichier garde la trace de chaque passage de modifications. Nouvelles entrées
     « Valider pour un proche » (lien de localisation facultatif, sinon adresse + numéro) ;
     confirmation particulier : le téléphone suffit, e-mail facultatif. Suivi SN :
     « Livreur en route ».
+
+---
+
+## Passage 18 — nuit du 27 novembre 2026 : branchement réel sur la tour de contrôle
+
+**Demande** : brancher l'app sur la tour (catalogue v2, commandes, suivi, demandes pro,
+introuvables, annonces, publications), chasse aux erreurs, Vercel ; mode autonome. Travail sur la
+branche `nuit-branchement` (pas `main`). Décisions : `DECISIONS.md`. Réglages restants :
+`A-CONNECTER.md`. Ce qui reste à corriger : `ERREURS.md`.
+
+**Fait**
+- `lib/config.ts` : `CONTROL_TOWER` (variable `EXPO_PUBLIC_CONTROL_TOWER_URL`) → `CATALOG_ENDPOINT`
+  (`?v=2`), `TEAM_ENDPOINT`, `VIDEOS_ENDPOINT`, `REFRESH_MS = 60 s` ; `TEST_TOOLS = !CONTROL_TOWER`.
+- `lib/catalog/schema.ts` : `schema` 1 ou 2 ; `categories`, `filters`, `payments`,
+  `productRequest`, `countryPrices` (particuliers et pros) ; `forCountry()` applique le prix du
+  pays du client (adresse → compte → appareil).
+- `lib/catalog/source.ts` : `watchCatalog` (ouverture, 60 s, `AppState` actif), rendu seulement
+  si le document change, copie hors ligne ; panier relu contre la dernière copie au démarrage.
+- Rayons et filtres du document (nom, ordre, nouveaux rayons) ; illustrations de l'app gardées
+  sauf photo publiée par l'équipe (design inchangé).
+- Commandes particuliers → `POST /api/orders` (`type: 'commande'`, devise, position, pour un
+  proche) avec file locale (`transmitted: false`) et renvoi ; suivi `GET ?compte=` → statut,
+  date, messages ; demandes pro (format v2 existant) + étape en clair.
+- `components/MissingProduct.tsx` (repris du correctif, mêmes jetons de style) sous la recherche
+  quand rien n'est trouvé dans TOUT le catalogue → `produit_introuvable`.
+- Bandeau d'annonces construit sur les produits publiés ; paiements lus dans le catalogue ;
+  état vues/J'aime/commentaires envoyé à `?public=reactions` (sans le nom du compte).
+- Textes devenus faux corrigés (Profil « Vos données », Validation « aucune commande
+  transmise »), selon que la tour est branchée ou non.
+- `vercel.json` (build, `no-store`, `immutable`) ; ESLint (`expo lint`) configuré, 0 erreur.
+
+**Testé réellement** (navigateur Chromium via Playwright, contre la tour LOCALE — base simulée)
+- `npx tsc --noEmit` : 0 erreur. `npx expo export --platform web` : OK.
+- `scripts/test_app.py` (export sans tour, 390×844) : **63/63**.
+- `scripts/test_tower_live.py` (390×844) : **33/33** — prix modifié + produit masqué +
+  emballage ajouté dans la tour visibles en 53–55 s sans recharger ; prix Sénégal
+  (`countryPrices`) ; annonce publiée puis retirée ; introuvable reçu ; commande reçue (lignes,
+  devise, position) → paiement pointé → « Validée » dans l'app en 42–46 s ; demande pro →
+  « Contrat conclu » → « Confirmée » ; GP France proposé à la validation.
+- Relevé d'erreurs (`hunt_errors.py`, `hunt_interactions.py`) à 390×844 et 1440×900 :
+  0 erreur console / page / réseau.
+
+**Non testé** : sur téléphone (iOS / Android) ; contre la vraie base Supabase (aucune clé sur
+le poste) ; déploiement Vercel (aucun projet créé).
+
+**Restant** : voir `ERREURS.md` (photos d'emballage, « le cagette », forfait transport codé en
+dur, messages de suivi non affichés, publications photo, position livreur non rafraîchie…) et
+`A-CONNECTER.md` (Supabase, variable de la tour, identité EAS).
 
 ---
 
