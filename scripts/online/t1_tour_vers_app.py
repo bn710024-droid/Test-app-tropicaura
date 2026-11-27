@@ -140,8 +140,11 @@ def run():
             ids = apply_batch()
             changed = time.time()
             # ── Arrivée du nouveau document dans les trois comptes, sans recharger
+            # Le lot prend du temps : une relecture peut tomber en plein milieu (prix déjà changé,
+            # filtres ou annonces pas encore). On attend donc aussi les dernières modifications du lot.
+            last = {'A': lambda p: 'Annonce qui se termine TEST' in body(p), 'B': lambda p: 'Rayon Tout TEST' in labels(p, 'Rayon ')}
             for who, page in (('A', A), ('B', B)):
-                d = wait_for(page, lambda: any('3,75' in l for l in labels(page, 'Pomme')), 75)
+                d = wait_for(page, lambda: any('3,75' in l for l in labels(page, 'Pomme')) and last[who](page), 75)
                 check(f'app {who} : nouveau catalogue reçu en ≤ 60 s sans recharger', d is not None and d <= 62, f'({d and round(d)} s)')
             # Espace pro : pas de puces de rayon (choix de l'application) ; le rayon masqué retire ses produits.
             search(C, 'tomate')
