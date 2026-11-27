@@ -98,25 +98,34 @@ branche `nuit-branchement` (pas `main`). Décisions : `DECISIONS.md`. Réglages 
   état vues/J'aime/commentaires envoyé à `?public=reactions` (sans le nom du compte).
 - Textes devenus faux corrigés (Profil « Vos données », Validation « aucune commande
   transmise »), selon que la tour est branchée ou non.
+- Position pour le livreur rafraîchie tant que la tour renvoie `tracking: true` (sans redemander
+  l'accord) ; références de commande sur 6 caractères ; carte « Tour de contrôle » du Profil
+  exacte ; `DesktopHero` sur les annonces publiées.
 - `vercel.json` (build, `no-store`, `immutable`) ; ESLint (`expo lint`) configuré, 0 erreur.
+- Côté tour (même branche) : `?v=2`, pays GP, devise des commandes (F CFA), statistiques sans
+  mélange de devises, libellé « par cagette de 5 kg », textes faux corrigés, `npm run local`.
 
 **Testé réellement** (navigateur Chromium via Playwright, contre la tour LOCALE — base simulée)
 - `npx tsc --noEmit` : 0 erreur. `npx expo export --platform web` : OK.
 - `scripts/test_app.py` (export sans tour, 390×844) : **63/63**.
-- `scripts/test_tower_live.py` (390×844) : **33/33** — prix modifié + produit masqué +
-  emballage ajouté dans la tour visibles en 53–55 s sans recharger ; prix Sénégal
-  (`countryPrices`) ; annonce publiée puis retirée ; introuvable reçu ; commande reçue (lignes,
-  devise, position) → paiement pointé → « Validée » dans l'app en 42–46 s ; demande pro →
-  « Contrat conclu » → « Confirmée » ; GP France proposé à la validation.
-- Relevé d'erreurs (`hunt_errors.py`, `hunt_interactions.py`) à 390×844 et 1440×900 :
-  0 erreur console / page / réseau.
+- `scripts/test_tower_live.py` (390×844) : **36/36** — prix modifié + produit masqué +
+  emballage ajouté dans la tour visibles en 53–55 s sans recharger (« 14,50 € par cagette de
+  5 kg ») ; prix Sénégal (`countryPrices`) ; annonce publiée puis retirée ; introuvable reçu ;
+  commande reçue (lignes, devise, position) → paiement pointé → « Validée » dans l'app en
+  42–46 s ; position du livreur rafraîchie sans nouvel accord ; commande passée pendant une
+  coupure réseau → gardée puis renvoyée en ~50 s ; GP France proposé à la validation ; demande
+  pro → « Contrat conclu » → « Confirmée ».
+- Relevé d'erreurs (`hunt_errors.py` : ~50 écrans ; `hunt_interactions.py` : ~35 gestes —
+  favoris, Découvrir, profil, adresse, commande pour un proche, crédits, déconnexion /
+  reconnexion ; tour : fiche modifiée et enregistrée via l'interface, rayon, annonce, prix,
+  livraison, introuvables) à 390×844 et 1440×900 : **0 erreur console / page / réseau**.
 
 **Non testé** : sur téléphone (iOS / Android) ; contre la vraie base Supabase (aucune clé sur
 le poste) ; déploiement Vercel (aucun projet créé).
 
-**Restant** : voir `ERREURS.md` (photos d'emballage, « le cagette », forfait transport codé en
-dur, messages de suivi non affichés, publications photo, position livreur non rafraîchie…) et
-`A-CONNECTER.md` (Supabase, variable de la tour, identité EAS).
+**Restant** : voir `ERREURS.md` (photos d'emballage, « 5000 g » au lieu de 5 kg, forfait
+transport codé en dur, messages de suivi non affichés, publications photo, identifiant de compte
+prévisible…) et `A-CONNECTER.md` (Supabase, variable de la tour, identité EAS).
 
 ---
 
