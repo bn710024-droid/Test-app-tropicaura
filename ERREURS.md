@@ -33,8 +33,8 @@ Relevé automatique de cette nuit (scripts `hunt_errors.py` et `hunt_interaction
   `photo: { asset: 'format:<produit>:<emballage>' }` par défaut dans `shared/catalog-v2.js`.
 
 ### 2. ~~Contenu affiché en grammes au-delà du kilo (« contient 5000 g »)~~ — corrigé
-- **Corrigé** (27/11, matin) : `lib/weight.ts` — ≥ 1 000 g → « 5 kg », « 1,5 kg » (une décimale
-  au plus), < 1 000 g → « 500 g » ; fiche, cartes emballage, texte des commandes, et côté tour
+- **Corrigé** (27/11, matin) : `lib/weight.ts` — ≥ 1 000 g → « 5 kg », « 1,5 kg », « 1,25 kg » (deux décimales
+  au plus, zéros inutiles retirés), < 1 000 g → « 500 g » ; fiche, cartes emballage, texte des commandes, et côté tour
   (`packContent`). Tests : `scripts/test_contents.mjs`, `test_tower_live.py`.
 
 ### 3. Forfait transport codé en dur dans l'app (6 € Sénégal, 48 € France…)
