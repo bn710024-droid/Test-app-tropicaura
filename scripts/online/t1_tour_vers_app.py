@@ -222,8 +222,21 @@ def run():
             doc = v2()
             camp = {c.get('key'): c for c in doc['campaigns']}
             check('annonce image « toucher » publiée (lien tap)', camp.get(ids.get('toucher'), {}).get('link') == 'tap', list(camp)[:4])
-            check('annonce image sans lien (« none ») publiée', ids.get('sans-lien') in camp,
-                  'écartée par ?v=2 : l’application exige un produit (ERREURS tour n° 1)')
+            none = camp.get(ids.get('sans-lien'), {})
+            check('annonce image sans lien (« none ») publiée sans produit', ids.get('sans-lien') in camp and none.get('id') is None
+                  and none.get('link') == 'none', none)
+            tap = camp.get(ids.get('toucher'), {})
+            srcs = img_srcs(A)
+            check('annonce « toucher » : image affichée dans l’app', bool(tap.get('photo')) and any(tap['photo']['url'] in x for x in srcs))
+            check('annonce « toucher » : aucun bouton affiché', 'Voir la poire' not in body(A) and 'Voir la poire' in labels(A, 'Voir la poire'))
+            check('annonce image seule : affichée dans l’app sans produit ni bouton',
+                  bool(none.get('photo')) and any(none['photo']['url'] in x for x in srcs))
+            A.get_by_role('button', name='Voir la poire', exact=True).first.click()
+            A.wait_for_timeout(1500)
+            check('annonce « toucher » : toucher l’image ouvre la fiche du produit', A.get_by_role('button', name='Retour').count() > 0
+                  and 'Comice' in body(A))
+            if A.get_by_role('button', name='Retour').count():
+                back(A)
             # Introuvable
             search(A, 'zzzz')
             check('introuvable : texte personnalisé affiché', 'Introuvable TEST' in body(A))

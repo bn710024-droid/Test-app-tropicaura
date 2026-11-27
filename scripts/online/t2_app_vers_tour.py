@@ -9,8 +9,8 @@ testée. Tout ce qui a été créé est supprimé à la fin.
 """
 import pathlib, re, time
 from playwright.sync_api import sync_playwright
-from common import (APP, SHOTS, api, body, check, labels, new_page, open_product, save_results, search, signup,
-                    upload_publication_file, wait_for)
+from common import (APP, SHOTS, api, body, check, img_srcs, labels, new_page, open_product, png, save_results, search,
+                    signup, upload_publication_file, wait_for)
 
 VIDEO = pathlib.Path(__file__).resolve().parents[2] / 'assets' / 'videos' / 'commander.mp4'
 NAMES = {'A': 'Awa Test Commande', 'B': 'Bruno Test France', 'C': 'Pro Test Demandes'}
@@ -77,16 +77,37 @@ def run():
         ctxB, B = new_page(browser)
         ctxC, C = new_page(browser)
         try:
+            polls = []
+            def on_poll(r):
+                if '/api/orders?compte=' not in r.url:
+                    return
+                try:
+                    st = [x.get('status') for x in r.json().get('orders', [])]
+                except Exception:  # noqa: BLE001
+                    st = []
+                polls.append((time.time(), r.status, st))
+            A.on('response', on_poll)
+            A.on('requestfailed', lambda r: polls.append((time.time(), 'échec', [])) if '/api/orders?compte=' in r.url else None)
             signup(A, 'particulier', NAMES['A'], '+221 77 000 00 21', 'Sénégal')
             check('inscription particulier (Sénégal)', 'Tout l’étal' in body(A))
             signup(C, 'pro', NAMES['C'], '+221 77 000 00 23', 'Sénégal')
             check('inscription professionnel', 'Catalogue professionnel' in body(C))
             logi = api('GET', '/api/orders')['logistics']
 
+            # ── Moyens de paiement : « Virement » désactivé dans la tour → absent de l'application
+            r = api('PUT', '/api/settings', {'key': 'payments', 'value': {'orange_money': True, 'wave': True, 'virement': False, 'carte': True}})
+            check('tour : moyen de paiement désactivé (réglage payments)', (r or {}).get('value', {}).get('virement') is False, r)
+            pays = [x['id'] for x in api('GET', '/api/catalog?v=2')['payments']]
+            check('tour : ?v=2 ne publie que les moyens activés', pays == ['orange_money', 'wave', 'carte'], pays)
+            r = api('PUT', '/api/settings', {'key': 'payments', 'value': {'orange_money': False, 'wave': False, 'virement': False, 'carte': False}})
+            check('tour : impossible de tout désactiver', (r or {}).get('_status') == 400, r)
+            A.wait_for_timeout(50000)  # une relecture du catalogue (45 s)
+
             # ── Commande Sénégal avec position
             methods, text = place_order(A, 'pomme', '^Pomme', 'Sénégal', '12 Rue 10, Médina', 'Dakar', NAMES['A'],
                                         'awa@exemple.test', '+221 77 000 00 21', True)
-            check('moyens de paiement proposés (4)', len(methods) == 4, methods)
+            check('moyens de paiement : seuls les 3 activés proposés (sans virement)', methods == ['Orange Money', 'Wave', 'Carte bancaire'], methods)
+            api('PUT', '/api/settings', {'key': 'payments', 'value': {'orange_money': True, 'wave': True, 'virement': True, 'carte': True}})
             mine = orders_of(NAMES['A'])
             check('commande Sénégal reçue par la tour', len(mine) == 1, f'({len(mine)})')
             o = mine[0] if mine else None
@@ -99,9 +120,11 @@ def run():
                          ({'status': 'expediee'}, 'Livreur en route'), ({'status': 'livree'}, 'Livrée')]
                 for change, label in steps:
                     r = api('PUT', '/api/orders', {'id': o['id'], **change})
+                    t0 = time.time()
                     d = tracked(A, label)
+                    seen = [f'+{round(t - t0)} s {code} {st}' for t, code, st in polls if t >= t0 - 1]
                     check(f'statut commande → « {label} » affiché chez le client (≤ 60 s)', d is not None and d <= 62,
-                          f'({d and round(d)} s ; tour : {r.get("status", r.get("error"))})')
+                          f'({d and round(d)} s ; tour : {r.get("status", r.get("error"))} ; relectures : {seen[:4]})')
                 A.screenshot(path=str(SHOTS / 'online-t2-livree.png'))
             # ── Annulation
             A.goto(APP, timeout=120000)
@@ -160,16 +183,15 @@ def run():
             go_orders(C)
             a = reqs.get('avion')
             if a:
-                for stage, label in (('contacte', 'En attente de réponse'), ('discussion', 'En attente de réponse'),
+                d = wait_for(C, lambda: 'Intérêt reçu' in body(C), 75)
+                check('demande pro → étape « interet » : client voit « Intérêt reçu »', d is not None and d <= 62, f'({d and round(d)} s)')
+                for stage, label in (('contacte', 'Contacté'), ('discussion', 'En discussion'),
                                      ('contrat', 'Confirmée'), ('preparation', 'En préparation'),
                                      ('livraison', 'Expédiée'), ('livree', 'Livrée')):
                     r = api('PUT', '/api/orders', {'id': a['id'], 'stage': stage})
                     d = wait_for(C, lambda: label in body(C), 75)
                     check(f'demande pro → étape « {stage} » : client voit « {label} »', d is not None and d <= 62,
                           f'({d and round(d)} s ; tour : {r.get("status", r.get("error"))})')
-                stage_shown = 'Contacté' in body(C) or 'En discussion' in body(C)
-                check('demande pro : libellé de l’étape (« Contacté », « En discussion ») affiché au client', stage_shown,
-                      'non affiché : seuls les statuts le sont')
             b = reqs.get('bateau')
             if b:
                 api('PUT', '/api/orders', {'id': b['id'], 'stage': 'annulee'})
@@ -220,7 +242,36 @@ def run():
             d = wait_for(A, lambda: (s := stats()).get('views', 0) >= 1 and s.get('likes', 0) >= 1 and s.get('comments', 0) >= 1, 40, 2000)
             check('tour : vue + J’aime + commentaire reçus', d is not None, stats())
             A.screenshot(path=str(SHOTS / 'online-t2-video.png'))
+
+            # ── Publication photo : 2 photos, description, vue, J'aime, commentaire
+            pics = [upload_publication_file('photo', png((200, 120, 40), 160), 'image/png'),
+                    upload_publication_file('photo', png((40, 120, 200), 160), 'image/png')]
+            r = api('POST', '/api/publications', {'kind': 'photos', 'published': True, 'data': {
+                'images': [{'url': u, 'width': 160, 'height': 160} for u in pics if u], 'description': 'Publication photo TEST'}})
+            pid = (r or {}).get('id')
+            if pid:
+                created['pubs'].append(pid)
+            check('tour : publication photo (2 photos) publiée', bool(pid), (r or {}).get('error', ''))
+            d = wait_for(A, lambda: A.get_by_role('button', name=re.compile('^Photos')).count() > 0, 80)
+            check('app : choix « Photos » apparu dans Découvrir (≤ 60 s, sans recharger)', d is not None and d <= 62, f'({d and round(d)} s)')
+            if d is not None:
+                A.get_by_role('button', name=re.compile('^Photos')).first.click()
+                A.wait_for_timeout(2500)
+                shown = [u for u in pics if u and any(u in src for src in img_srcs(A))]
+                check('app : les 2 photos de la publication affichées', len(shown) == 2, len(shown))
+                check('app : description affichée sous les photos', 'Publication photo TEST' in body(A))
+                A.get_by_role('button', name='J’aime cette publication').first.click()
+                A.wait_for_timeout(600)
+                A.get_by_role('button', name='Commenter cette publication').first.click()
+                A.wait_for_timeout(700)
+                A.get_by_label('Votre commentaire').fill('Commentaire photo TEST')
+                A.get_by_label('Envoyer le commentaire').click()
+                A.screenshot(path=str(SHOTS / 'online-t2-photos.png'))
+                pstats = lambda: next((p.get('stats', {}) for p in api('GET', '/api/publications') if p['id'] == pid), {})
+                d = wait_for(A, lambda: (x := pstats()).get('views', 0) >= 1 and x.get('likes', 0) >= 1 and x.get('comments', 0) >= 1, 40, 2000)
+                check('tour : vue + J’aime + commentaire de la publication photo reçus', d is not None, pstats())
         finally:
+            api('PUT', '/api/settings', {'key': 'payments', 'value': {'orange_money': True, 'wave': True, 'virement': True, 'carte': True}})
             # ── Nettoyage : commandes, demandes, introuvables, publications, J'aime/commentaires de test
             for o in api('GET', '/api/orders')['orders']:
                 if o['customer'].get('name') in NAMES.values() or str(o['customer'].get('company', '')).startswith('Société Test'):

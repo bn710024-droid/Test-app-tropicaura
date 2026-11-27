@@ -31,14 +31,17 @@ const HEIGHT = 256;
 const AUTO_MS = 6000;
 
 type Slide = {
-  /** Produit de la campagne : le bandeau ouvre sa fiche. */
-  id: string;
+  key: string;
+  /** Produit de la campagne : le bandeau ouvre sa fiche ; `null` : image seule. */
+  id: string | null;
+  /** Annonce illustrée : bouton, toucher l'image (`tap`) ou image seule (`none`). */
+  link: 'button' | 'tap' | 'none';
   kicker: string;
   title: string;
   accent: string;
   body: string;
   cta: string;
-  back: Product;
+  back?: Product;
   /** Image de fond plein cadre de l'annonce, si elle est fournie. */
   photo?: Photo;
 };
@@ -52,15 +55,21 @@ export function buildSlides(
   // Produits du catalogue affiché (publié par la tour) ; par défaut, ceux de l'application.
   products: Record<string, Product> = PRODUCT_BY_ID,
 ): Slide[] {
-  return campaigns.filter((c) => campaignActive(c) && products[c.id]).map((c) => {
-    const product = products[c.id];
+  return campaigns.filter((c) => campaignActive(c) && (c.id ? products[c.id] : c.photo)).map((c, i) => {
+    const product = c.id ? products[c.id] : undefined;
+    if (!product) {
+      // Image seule publiée par l'équipe : aucun produit, aucun texte, aucun bouton.
+      return { key: c.key ?? `image-${i}`, id: null, link: 'none', kicker: '', title: '', accent: '', body: c.body, cta: '', photo: c.photo };
+    }
     const article = /^[aeiouyéèêh]/i.test(product.name)
       ? 'l’'
       : product.name.endsWith('e')
         ? 'la '
         : 'le ';
     return {
-      id: c.id,
+      key: c.key ?? product.id,
+      id: product.id,
+      link: c.photo ? (c.link === 'tap' ? 'tap' : 'button') : 'button',
       // Textes de l'annonce : fournis par la campagne, sinon déduits du produit.
       kicker:
         c.kicker ??
@@ -99,7 +108,10 @@ function SlideView({
   const accentWord = sep > 0 ? slide.accent.slice(sep + 1) : slide.accent;
 
   // Arrière-plan : grand, cadré serré, il déborde du bord droit de la carte.
-  const backRatio = RATIO[slide.back.id] ?? 1;
+  const back = slide.back;
+  // Annonce illustrée sans bouton (toucher l'image, ou image seule) : l'image se suffit à elle-même.
+  const imageOnly = !!slide.photo && slide.link !== 'button';
+  const backRatio = back ? (RATIO[back.id] ?? 1) : 1;
   const backW = Math.min(HEIGHT * 0.8 * backRatio, width * 0.66);
   const backH = backW / backRatio;
 
@@ -122,8 +134,10 @@ function SlideView({
   return (
     <Pressable
       feedback="none"
-      onPress={onPress}
-      accessible={false}
+      onPress={slide.link === 'none' ? undefined : onPress}
+      accessible={imageOnly}
+      accessibilityRole={slide.link === 'tap' ? 'button' : 'image'}
+      accessibilityLabel={imageOnly ? (slide.link === 'tap' ? slide.cta : slide.body || 'Annonce') : undefined}
       style={{ width, height: HEIGHT, overflow: 'hidden' }}
     >
       <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
@@ -138,6 +152,7 @@ function SlideView({
               priority={index === 0 ? 'high' : 'normal'}
               accessible={false}
             />
+            {!imageOnly && (
             <LinearGradient
               colors={['rgba(10,13,8,0.95)', 'rgba(10,13,8,0.62)', 'rgba(10,13,8,0.08)']}
               locations={[0, 0.45, 0.82]}
@@ -145,16 +160,19 @@ function SlideView({
               end={{ x: 1, y: 0 }}
               style={StyleSheet.absoluteFill}
             />
+            )}
+            {!imageOnly && (
             <LinearGradient
               colors={['rgba(10,13,8,0)', 'rgba(10,13,8,0.62)']}
               locations={[0.55, 1]}
               style={StyleSheet.absoluteFill}
             />
+            )}
           </>
-        ) : (
+        ) : back ? (
           <>
         <Glow
-          color={slide.back.tint}
+          color={back.tint}
           width={HEIGHT * 1.7}
           opacity={0.46}
           style={{ right: -HEIGHT * 0.62, top: -HEIGHT * 0.36 }}
@@ -178,7 +196,7 @@ function SlideView({
           ]}
         >
           <Image
-            source={slide.back.image}
+            source={back.image}
             style={StyleSheet.absoluteFill}
             contentFit="contain"
             priority={index === 0 ? 'high' : 'normal'}
@@ -202,9 +220,10 @@ function SlideView({
           accessible={false}
         />
           </>
-        )}
+        ) : null}
       </View>
 
+      {!imageOnly && (
       <Animated.View style={[styles.copy, textStyle]}>
         <Text style={styles.kicker} numberOfLines={1}>
           {slide.kicker}
@@ -229,6 +248,7 @@ function SlideView({
           <Ionicons name="chevron-forward" size={15} color={C.leaf} />
         </PressableScale>
       </Animated.View>
+      )}
     </Pressable>
   );
 }
@@ -345,7 +365,7 @@ export function HomeHero({
         >
           {slides.map((s, i) => (
             <SlideView
-              key={s.id}
+              key={s.key}
               slide={s}
               index={i}
               width={width}
@@ -354,7 +374,7 @@ export function HomeHero({
               onPress={() => {
                 tick();
                 touched.current = true;
-                onOpen(s.id);
+                if (s.id) onOpen(s.id);
               }}
             />
           ))}
@@ -362,7 +382,7 @@ export function HomeHero({
         <View style={styles.dots}>
           {slides.map((s, i) => (
             <Dot
-              key={s.id}
+              key={s.key}
               index={i}
               width={width}
               scrollX={scrollX}

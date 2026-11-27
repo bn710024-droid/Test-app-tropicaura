@@ -203,6 +203,8 @@ export function docCampaigns(doc: CatalogDocument): Campaign[] {
     const photo = campaignPhotoOf(c.photo);
     return {
       id: c.id,
+      ...(c.key ? { key: c.key } : null),
+      ...(c.link ? { link: c.link } : null),
       accent: c.accent,
       body: c.body,
       ...(c.kicker ? { kicker: c.kicker } : null),

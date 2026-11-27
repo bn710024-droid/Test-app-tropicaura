@@ -1258,8 +1258,12 @@ export const WHOLESALE_EXAMPLE: {
  * L'application n'affiche que les annonces actives à la date courante.
  */
 export type Campaign = {
-  /** Produit concerné : le bandeau ouvre sa fiche. */
-  id: string;
+  /** Produit concerné : le bandeau ouvre sa fiche ; `null` : image seule, sans produit. */
+  id: string | null;
+  /** Identifiant de l'annonce dans la tour. */
+  key?: string;
+  /** Annonce illustrée : bouton (`button`), toucher l'image (`tap`) ou image seule (`none`). */
+  link?: 'button' | 'tap' | 'none';
   accent: string;
   body: string;
   /** Image de fond plein cadre du bandeau. */

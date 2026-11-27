@@ -198,10 +198,15 @@ export type CatalogProduct = {
 /**
  * Annonce / publication de l'écran d'accueil, gérée par l'équipe : affichée seulement si
  * `enabled` est vrai et si la date courante est dans la fenêtre `startsAt`…`endsAt`.
- * `id` désigne le produit concerné (le bandeau ouvre sa fiche).
+ * `id` désigne le produit concerné (le bandeau ouvre sa fiche) ; `null` pour une image seule.
+ * `link` : ce que fait un toucher sur une annonce illustrée — `button` (bouton sous le texte),
+ * `tap` (toute l'image ouvre la fiche, sans bouton), `none` (image seule, aucun produit).
  */
+export type CampaignLink = 'button' | 'tap' | 'none';
 export type CatalogCampaign = {
-  id: string;
+  id: string | null;
+  key?: string;
+  link?: CampaignLink;
   accent: string;
   body: string;
   kicker?: string;
@@ -497,8 +502,9 @@ function parseDelivery(raw: unknown): DeliveryConfig {
 function parseCampaign(raw: unknown): CatalogCampaign | null {
   if (!raw || typeof raw !== 'object') return null;
   const o = raw as Record<string, unknown>;
-  const id = text(o.id);
-  if (!id) return null;
+  const id = text(o.id) || null;
+  const link: CampaignLink | undefined =
+    o.link === 'button' || o.link === 'tap' || o.link === 'none' ? o.link : undefined;
   const photo = (o.photo && typeof o.photo === 'object' ? o.photo : null) as Record<
     string,
     unknown
@@ -510,6 +516,9 @@ function parseCampaign(raw: unknown): CatalogCampaign | null {
       : typeof photo.asset === 'string' && photo.asset
         ? { asset: photo.asset }
         : null;
+  // Sans produit, seule une image sans lien a un sens.
+  if (!id && !(parsedPhoto && link === 'none')) return null;
+  const key = text(o.key);
   const kicker = text(o.kicker);
   const title = text(o.title);
   const cta = text(o.cta);
@@ -517,6 +526,8 @@ function parseCampaign(raw: unknown): CatalogCampaign | null {
   const endsAt = text(o.endsAt);
   return {
     id,
+    ...(key ? { key } : null),
+    ...(link ? { link } : null),
     accent: text(o.accent),
     body: text(o.body),
     ...(kicker ? { kicker } : null),

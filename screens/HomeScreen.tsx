@@ -200,7 +200,7 @@ export function HomeScreen() {
   // Annonces diffusées à la date courante : les éteintes ou périmées ne s'affichent pas.
   // … et seulement pour un produit visible dans l'espace du client (catalogue publié).
   const liveCampaigns = useMemo(
-    () => campaigns.filter((c) => campaignActive(c) && !!byId[c.id]),
+    () => campaigns.filter((c) => campaignActive(c) && (c.id ? !!byId[c.id] : !!c.photo)),
     [campaigns, byId],
   );
 

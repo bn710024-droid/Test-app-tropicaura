@@ -44,6 +44,11 @@ export const VIDEOS_ENDPOINT: string | null = CONTROL_TOWER
   ? `${CONTROL_TOWER}/api/publications?public=videos`
   : null;
 
+/** Publications photo de l'équipe (Favoris › Découvrir › Photos), publiées par la tour. */
+export const POSTS_ENDPOINT: string | null = CONTROL_TOWER
+  ? `${CONTROL_TOWER}/api/publications?public=photos`
+  : null;
+
 /** Une vidéo compte comme regardée après ce temps de lecture (ou à sa fin, si elle est plus courte). */
 export const WATCHED_AFTER_SEC = 3;
 

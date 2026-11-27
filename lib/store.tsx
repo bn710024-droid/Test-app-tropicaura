@@ -54,6 +54,7 @@ import {
   sendPosition,
   transmit,
 } from './transmission';
+import { PhotoPost, fetchPhotoPosts, postsFor } from './posts';
 import { REFRESH_MS, RETRY_MS, TEAM_ENDPOINT } from './config';
 import {
   DEMO_VIDEOS,
@@ -542,6 +543,8 @@ type Store = Persisted & {
 
   /** Vidéos de l'équipe visibles par ce compte, de la plus récente à la plus ancienne. */
   videos: TeamVideo[];
+  /** Publications photo de l'équipe pour ce type de compte (Favoris › Découvrir › Photos). */
+  posts: PhotoPost[];
   /** Nombre de vidéos pas encore regardées : c'est le compteur de l'onglet Favoris. */
   newVideoCount: number;
   markWatched: (id: string) => void;
@@ -568,6 +571,30 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   // Publications de l'équipe : exemples embarqués, remplacés par les vraies dès que l'outil
   // de publication est connecté.
   const [published, setPublished] = useState<TeamVideo[]>(DEMO_VIDEOS);
+  const [photoPosts, setPhotoPosts] = useState<PhotoPost[]>([]);
+  // Publications photo : relues comme les vidéos ; remplacées seulement si elles ont changé.
+  useEffect(() => {
+    let alive = true;
+    let last = '';
+    const load = () =>
+      fetchPhotoPosts().then((list) => {
+        if (!alive || !list) return;
+        const text = JSON.stringify(list);
+        if (text === last) return;
+        last = text;
+        setPhotoPosts(list);
+      });
+    load();
+    const timer = setInterval(load, REFRESH_MS);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') load();
+    });
+    return () => {
+      alive = false;
+      clearInterval(timer);
+      sub.remove();
+    };
+  }, []);
   // Relues comme le catalogue (toutes les REFRESH_MS et au retour au premier plan) : une vidéo
   // publiée dans la tour apparaît sans recharger. La liste n'est remplacée que si elle a changé.
   useEffect(() => {
@@ -1198,6 +1225,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   );
 
   const videos = useMemo(() => videosFor(published, isPro), [published, isPro]);
+  const posts = useMemo(() => postsFor(photoPosts, isPro), [photoPosts, isPro]);
   const newVideoCount = useMemo(
     () => videos.filter((v) => !data.watched.includes(v.id)).length,
     [videos, data.watched],
@@ -1296,6 +1324,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       advanceRequest,
       reorder,
       videos,
+      posts,
       newVideoCount,
       markWatched,
       toggleLike,
@@ -1343,6 +1372,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       advanceRequest,
       reorder,
       videos,
+      posts,
       newVideoCount,
       markWatched,
       toggleLike,
@@ -1440,7 +1470,9 @@ export function requestView(r: ProRequest): TrackView {
   return view(
     r.status,
     {
-      attente: 'En attente de réponse',
+      // Avant le contrat, l'étape réglée par l'équipe (« Intérêt reçu », « Contacté »,
+      // « En discussion », publiée par la tour) ; tant qu'elle n'est pas connue, l'attente.
+      attente: r.stageLabel || 'En attente de réponse',
       confirmee: 'Confirmée',
       preparation: 'En préparation',
       expediee: 'Expédiée',

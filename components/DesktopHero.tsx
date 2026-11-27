@@ -18,6 +18,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { PrimaryButton } from './Buttons';
 import { Glow } from './Glow';
 import { buildSlides } from './HomeHero';
+import type { Product } from '../lib/data';
 import { Pressable } from './Tap';
 import { RATIO } from '../lib/ratios';
 import { useStore } from '../lib/store';
@@ -35,7 +36,10 @@ const AUTO_MS = 7000;
 export function DesktopHero({ width, onOpen }: { width: number; onOpen: (id: string) => void }) {
   // Annonces et produits publiés par la tour (comme le bandeau du téléphone).
   const { campaigns, byId } = useStore();
-  const slides = useMemo(() => buildSlides(campaigns, byId), [campaigns, byId]);
+  const slides = useMemo(
+    () => buildSlides(campaigns, byId).filter((s): s is typeof s & { id: string; back: Product } => !!s.id && !!s.back),
+    [campaigns, byId],
+  );
   const reduced = useReducedMotion();
   const [index, setIndex] = useState(0);
   const paused = useRef(false);

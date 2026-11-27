@@ -32,7 +32,7 @@ import { TextInput } from './Input';
 import { PAGE_SCROLL } from './PageSwipe';
 import { Sheet } from './Sheet';
 import { Pressable } from './Tap';
-import { WATCHED_AFTER_SEC } from '../lib/config';
+import { TEAM_ENDPOINT, WATCHED_AFTER_SEC } from '../lib/config';
 import { formatDay } from '../lib/format';
 import { initials } from '../lib/identity';
 import { VideoComment, useStore } from '../lib/store';
@@ -474,14 +474,16 @@ const ReelItem = memo(function ReelItem({
   );
 });
 
-function Comments({
-  video,
+/** Commentaires d'une vidéo ou d'une publication photo (réutilisé par PhotoPosts). */
+export function Comments({
+  empty,
   list,
   name,
   onAdd,
   onRemove,
 }: {
-  video: TeamVideo;
+  /** Texte affiché tant qu'il n'y a aucun commentaire. */
+  empty: string;
   list: VideoComment[];
   name: string;
   onAdd: (text: string) => void;
@@ -498,8 +500,9 @@ function Comments({
   return (
     <View>
       <Text style={styles.sheetNote}>
-        Démonstration : vos commentaires restent sur cet appareil. Ils ne sont ni publiés, ni
-        modérés, ni visibles par d’autres personnes pour l’instant.
+        {TEAM_ENDPOINT
+          ? 'Vos commentaires sont transmis à notre équipe. Ils ne sont pas publiés : personne d’autre ne les voit.'
+          : 'Démonstration : vos commentaires restent sur cet appareil. Ils ne sont ni publiés, ni modérés, ni visibles par d’autres personnes pour l’instant.'}
       </Text>
       <ScrollView
         style={styles.comments}
@@ -507,9 +510,7 @@ function Comments({
         showsVerticalScrollIndicator={false}
       >
         {list.length === 0 ? (
-          <Text style={styles.noComment}>
-            Aucun commentaire sur « {video.title} ». Écrivez le premier.
-          </Text>
+          <Text style={styles.noComment}>{empty}</Text>
         ) : (
           list.map((c) => (
             <Animated.View
@@ -722,7 +723,7 @@ export function Reels({ active, top }: { active: boolean; top: number }) {
       <Sheet visible={!!current} onClose={() => setCommentsFor(null)} title="Commentaires">
         {current && (
           <Comments
-            video={current}
+            empty={`Aucun commentaire sur « ${current.title} ». Écrivez le premier.`}
             list={comments[current.id] ?? []}
             name={account?.name ?? ''}
             onAdd={(text) => addComment(current.id, text)}
