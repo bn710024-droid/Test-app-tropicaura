@@ -74,7 +74,9 @@ with sync_playwright() as pw:
     step(page, st, 'app-profil-fermer', lambda: page.keyboard.press('Escape'))
     step(page, st, 'app-adresse', lambda: page.get_by_role('button', name=re.compile('^Ajouter')).first.click())
     step(page, st, 'app-adresse-fermer', lambda: page.keyboard.press('Escape'))
-    step(page, st, 'app-credits', lambda: page.get_by_text('Crédits photo et licences').first.click(), 1200)
+    step(page, st, 'app-credits', lambda: (page.get_by_role('tab', name=re.compile('Commandes')).first.click(),
+                                           page.wait_for_timeout(700),
+                                           page.get_by_text('Crédits photo et licences').first.click()), 1200)
     step(page, st, 'app-credits-retour', lambda: page.get_by_role('button', name=re.compile('^(Retour|Fermer)')).first.click())
     step(page, st, 'app-marche', lambda: page.get_by_role('tab', name=re.compile('Marché')).first.click())
     step(page, st, 'app-ajout-carte', lambda: page.get_by_role('button', name=re.compile('^Ajouter .* au panier')).first.click())
@@ -86,11 +88,13 @@ with sync_playwright() as pw:
     step(page, st, 'app-fermer-commande', lambda: page.get_by_role('button', name=re.compile('^(Fermer|Retour)')).first.click())
     step(page, st, 'app-deconnexion', lambda: (page.get_by_role('tab', name=re.compile('Profil')).first.click(),
                                                page.wait_for_timeout(600),
-                                               page.get_by_role('button', name=re.compile('Se déconnecter')).first.click()), 1500)
+                                               page.get_by_role('button', name='Me déconnecter').first.scroll_into_view_if_needed(),
+                                               page.get_by_role('button', name='Me déconnecter').first.click()), 1500)
     step(page, st, 'app-reconnexion', lambda: (page.get_by_role('button', name=re.compile('J’ai déjà un compte')).first.click(),
                                                page.wait_for_timeout(600),
-                                               page.get_by_label(re.compile('(E-mail ou numéro|Numéro|Identifiant)', re.I)).first.fill('+221 77 444 55 66'),
-                                               page.get_by_role('button', name=re.compile('^(Se connecter|Continuer|Entrer)')).first.click()), 2000)
+                                               page.get_by_label('E-mail ou numéro de téléphone').first.fill('+221 77 444 55 66'),
+                                               page.get_by_role('button', name='Me connecter').last.click(),
+                                               page.get_by_text('Tout l’étal').wait_for(timeout=20000)), 2000)
     ctx.close()
 
     # ───────── Tour (1440×900)
@@ -100,20 +104,21 @@ with sync_playwright() as pw:
     step(page, st, 'tour-fiche', lambda: page.goto(f'{TOWER}/#/produits/poire'), 3000)
     step(page, st, 'tour-fiche-agrandir', lambda: page.get_by_role('button', name=re.compile('^Agrandir')).first.click(), 1200)
     step(page, st, 'tour-fiche-termine', lambda: page.get_by_role('button', name=re.compile('^Terminé')).first.click())
-    step(page, st, 'tour-fiche-enregistrer', lambda: page.get_by_role('button', name='Enregistrer et quitter').first.click(), 2500)
+    step(page, st, 'tour-fiche-modifier', lambda: page.get_by_role('radio', name=re.compile('^Teinte')).nth(2).click(), 600)
+    step(page, st, 'tour-fiche-enregistrer', lambda: page.get_by_role('button', name='Enregistrer', exact=True).last.click(), 2500)
     step(page, st, 'tour-rayons', lambda: page.goto(f'{TOWER}/#/rayons'), 2500)
     step(page, st, 'tour-rayon-ouvrir', lambda: page.get_by_role('button', name=re.compile('Agrumes')).first.click(), 1200)
     step(page, st, 'tour-rayon-fermer', lambda: page.keyboard.press('Escape'))
     step(page, st, 'tour-annonces', lambda: (page.goto(f'{TOWER}/#/publications'), page.wait_for_timeout(2000),
-                                             page.get_by_role('tab', name=re.compile('Annonces')).first.click()), 1500)
-    step(page, st, 'tour-annonce-nouvelle', lambda: page.get_by_role('button', name=re.compile('(Nouvelle annonce|Créer une annonce|Ajouter)')).first.click(), 1500)
+                                             page.get_by_role('radio', name='Annonces').first.click()), 1500)
+    step(page, st, 'tour-annonce-nouvelle', lambda: page.get_by_role('button', name=re.compile('(annonce|Ajouter|Publier)', re.I)).first.click(), 1500)
     step(page, st, 'tour-annonce-fermer', lambda: page.keyboard.press('Escape'))
     step(page, st, 'tour-reglages-verifier', lambda: (page.goto(f'{TOWER}/#/reglages'), page.wait_for_timeout(2000),
                                                       page.get_by_role('button', name='Vérifier le document publié').click()), 2500)
     step(page, st, 'tour-livraison', lambda: page.goto(f'{TOWER}/#/commandes/livraison'), 2500)
     step(page, st, 'tour-livraison-pays', lambda: (page.get_by_placeholder('Ajouter un pays : France, Belgique…').first.fill('Bel'),), 800)
     step(page, st, 'tour-prix', lambda: page.goto(f'{TOWER}/#/prix'), 2500)
-    step(page, st, 'tour-prix-pros', lambda: page.get_by_role('tab', name=re.compile('Professionnels')).first.click(), 1200)
+    step(page, st, 'tour-prix-pros', lambda: page.get_by_role('radio', name='Professionnels').first.click(), 1200)
     step(page, st, 'tour-introuvables', lambda: page.goto(f'{TOWER}/#/introuvables'), 2500)
     step(page, st, 'tour-introuvables-message', lambda: page.get_by_role('button', name='Modifier').first.click(), 1200)
     ctx.close()
