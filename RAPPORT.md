@@ -40,7 +40,7 @@ Ce fichier garde la trace de chaque passage de modifications. Nouvelles entrées
 7. **Tour de contrôle** : UNE adresse, `EXPO_PUBLIC_CONTROL_TOWER_URL` (`lib/config.ts` en
    dérive tous les raccordements). L'app lit `<tour>/api/catalog?v=2` (`schema: 2`, format de
    `lib/catalog/schema.ts` + `categories`, `filters`, `payments`, `productRequest`,
-   `countryPrices`) à l'ouverture / 60 s / premier plan ; envoie commandes, demandes pro,
+   `countryPrices`, `transport`) à l'ouverture / 45 s (+ nouvel essai à 8 s) / premier plan ; envoie commandes, demandes pro,
    introuvables (`/api/orders`) et réactions vidéo (`?public=reactions`) ; relit les statuts
    (`/api/orders?compte=`). Sans adresse : catalogue d'exemple, rien n'est envoyé. Le correctif
    `app-tropicaura.patch` de la tour est OBSOLÈTE : ne jamais l'appliquer.
@@ -69,6 +69,38 @@ Ce fichier garde la trace de chaque passage de modifications. Nouvelles entrées
     « Valider pour un proche » (lien de localisation facultatif, sinon adresse + numéro) ;
     confirmation particulier : le téléphone suffit, e-mail facultatif. Suivi SN :
     « Livreur en route ».
+
+---
+
+## Passage 19 — 27 novembre 2026 (jour et soir) : mise en ligne, test complet, correctifs
+
+**Demande** : brancher Supabase + Vercel, remplir la base, test complet en ligne (tour → app,
+app → tour, statuts, chaque bouton), rendre les images à la tour, corriger les KO 1 à 5 ; puis,
+propriétaire absent : « fais tout pour que l'application soit prête ».
+
+**En ligne** : app https://tropicaura-app.vercel.app · tour https://tropicaura-tour.vercel.app ·
+Supabase (RLS, rôle serveur seul). Branche de production Vercel = `nuit-branchement` (à remettre
+sur `main` après fusion). PR n° 1 des deux dépôts ouvertes, non fusionnées.
+
+**Corrigé / ajouté**
+- Images de la tour revenues (liste des photos embarquées + 4 photos webp) ; photos des emballages
+  publiées (`format:<produit>:<emballage>`).
+- Annonces : « toucher l'image » (image seule, ouvre la fiche) et « image seule » sans produit.
+- Demandes pro : « Intérêt reçu », « Contacté », « En discussion » affichés au client.
+- Tour › Réglages : moyens de paiement (interrupteurs) et forfaits de transport par zone (en euros),
+  publiés dans `?v=2` ; l'app les applique, sinon son barème.
+- Publications photo : Favoris › Découvrir › Photos (1 à 10 photos, description, J'aime, commentaires).
+- Raté de statut (1 sur 14) : cause trouvée côté tour — la position du client réécrivait la commande
+  entière et effaçait un statut changé au même moment ; écritures conditionnelles.
+- Identifiant de compte : 128 bits aléatoires. Relecture du catalogue 45 s + nouvel essai.
+
+**Vérifié (en ligne)** : t1 tour → app 80/80 · t2 app → tour + statuts 42/42 · t4 images 20/20 ·
+t5 transport 8/8 · t3 boutons 954 clics, 0 erreur. Hors ligne : `test_app.py` 63/63, `tsc` 0 erreur,
+tour `npm run build` OK, tests unitaires (contenus, catalogue v2, paiements, transport, empreinte).
+Revue de code des correctifs de concurrence et du transport : 0 critique, 0 majeur.
+
+**Reste** : voir `ERREURS.md` (app n° 4, 8, 9 ; tour n° 2, 4, 8) ; vrais forfaits de transport à
+saisir par l'équipe.
 
 ---
 

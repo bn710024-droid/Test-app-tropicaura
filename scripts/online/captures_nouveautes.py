@@ -10,6 +10,7 @@ import pathlib, re, sys
 OUT = pathlib.Path(sys.argv[1])
 OUT.mkdir(parents=True, exist_ok=True)
 sys.argv = [sys.argv[0], *sys.argv[2:]]
+from PIL import Image  # noqa: E402
 from playwright.sync_api import sync_playwright  # noqa: E402
 from common import APP, TOUR, api, body, check, save_results, signup, upload_publication_file, wait_for  # noqa: E402
 
@@ -45,9 +46,12 @@ with sync_playwright() as pw:
         # ── Données de capture : annonce « toucher » (poire) et publication de 2 photos
         banner = upload_publication_file('annonce', ASSETS / 'campaigns' / 'melon.webp', 'image/webp')
         publish('annonce', {'image_url': banner, 'link': 'tap', 'product_id': 'melon', 'body': ''})
-        pics = [upload_publication_file('photo', ASSETS / 'produce' / f, 'image/webp') for f in ('mangue.webp', 'ananas.webp')]
-        publish('photos', {'images': [{'url': u, 'width': 1080, 'height': 1080} for u in pics if u],
-                           'description': 'Arrivage de la semaine : mangues et ananas du Sénégal.'})
+        # Deux vraies photos, avec leurs vraies dimensions (la tour les relève à l'envoi).
+        files = [ASSETS / 'campaigns' / 'mangue.webp', ASSETS / 'campaigns' / 'melon.webp']
+        sizes = [Image.open(f).size for f in files]
+        pics = [upload_publication_file('photo', f, 'image/webp') for f in files]
+        publish('photos', {'images': [{'url': u, 'width': w, 'height': h} for u, (w, h) in zip(pics, sizes) if u],
+                           'description': 'Arrivage de la semaine : mangues et melons du Sénégal.'})
 
         ctx = browser.new_context(viewport={'width': 390, 'height': 844}, has_touch=True, is_mobile=True, device_scale_factor=2)
         page = ctx.new_page()
