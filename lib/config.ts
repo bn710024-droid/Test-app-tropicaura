@@ -66,8 +66,14 @@ export const CATALOG_ENDPOINT: string | null = CONTROL_TOWER
   ? `${CONTROL_TOWER}/api/catalog?v=2`
   : null;
 
-/** Relecture du catalogue et du suivi des commandes : toutes les 60 secondes, application ouverte. */
-export const REFRESH_MS = 60_000;
+/**
+ * Relecture du catalogue et du suivi des commandes, application ouverte : toutes les 45 secondes,
+ * pour qu'un changement fait dans la tour soit visible en moins de 60 s, latence réseau comprise.
+ */
+export const REFRESH_MS = 45_000;
+
+/** Relecture manquée (réseau, démarrage de la tour) : un seul nouvel essai, 8 s plus tard. */
+export const RETRY_MS = 8_000;
 
 /**
  * Tour de contrôle (application de contrôle de l'équipe).

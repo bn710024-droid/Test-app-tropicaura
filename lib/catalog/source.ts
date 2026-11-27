@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { AppState } from 'react-native';
-import { CATALOG_ENDPOINT, REFRESH_MS } from '../config';
+import { CATALOG_ENDPOINT, REFRESH_MS, RETRY_MS } from '../config';
 import { EMBEDDED_CATALOG } from './embedded';
 import { CatalogDocument, parseCatalog } from './schema';
 
@@ -79,7 +79,7 @@ export async function loadCatalog(): Promise<CatalogState | null> {
 }
 
 /**
- * Suit le catalogue publié : lecture à l'ouverture, puis toutes les `REFRESH_MS` (60 s) et à
+ * Suit le catalogue publié : lecture à l'ouverture, puis toutes les `REFRESH_MS` (45 s) et à
  * chaque retour de l'application au premier plan. `onChange` n'est appelé que si le document
  * reçu diffère du précédent (aucun rendu inutile). Réseau perdu : la version affichée reste ;
  * au démarrage sans réseau, la copie conservée sur l'appareil est montrée.
@@ -91,8 +91,9 @@ export function watchCatalog(onChange: (state: CatalogState) => void): () => voi
   let lastText: string | null = null;
   let triedCache = false;
   let running = false;
+  let retry: ReturnType<typeof setTimeout> | null = null;
 
-  const refresh = async () => {
+  const refresh = async (isRetry = false) => {
     if (running || !alive) return;
     running = true;
     try {
@@ -105,10 +106,19 @@ export function watchCatalog(onChange: (state: CatalogState) => void): () => voi
           keep(fresh.text, receivedAt);
           onChange({ doc: fresh.doc, origin: 'base', receivedAt });
         }
-      } else if (lastText === null && !triedCache) {
-        triedCache = true;
-        const cached = await cachedCatalog();
-        if (alive && cached) onChange(cached);
+      } else {
+        if (lastText === null && !triedCache) {
+          triedCache = true;
+          const cached = await cachedCatalog();
+          if (alive && cached) onChange(cached);
+        }
+        // Relecture manquée : un seul nouvel essai, sans attendre le tour suivant.
+        if (!isRetry && !retry && alive) {
+          retry = setTimeout(() => {
+            retry = null;
+            refresh(true);
+          }, RETRY_MS);
+        }
       }
     } finally {
       running = false;
@@ -116,13 +126,14 @@ export function watchCatalog(onChange: (state: CatalogState) => void): () => voi
   };
 
   refresh();
-  const timer = setInterval(refresh, REFRESH_MS);
+  const timer = setInterval(() => refresh(), REFRESH_MS);
   const sub = AppState.addEventListener('change', (state) => {
     if (state === 'active') refresh();
   });
   return () => {
     alive = false;
     clearInterval(timer);
+    if (retry) clearTimeout(retry);
     sub.remove();
   };
 }

@@ -54,7 +54,7 @@ import {
   sendPosition,
   transmit,
 } from './transmission';
-import { REFRESH_MS, TEAM_ENDPOINT } from './config';
+import { REFRESH_MS, RETRY_MS, TEAM_ENDPOINT } from './config';
 import {
   DEMO_VIDEOS,
   TeamVideo,
@@ -568,13 +568,28 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   // Publications de l'équipe : exemples embarqués, remplacés par les vraies dès que l'outil
   // de publication est connecté.
   const [published, setPublished] = useState<TeamVideo[]>(DEMO_VIDEOS);
+  // Relues comme le catalogue (toutes les REFRESH_MS et au retour au premier plan) : une vidéo
+  // publiée dans la tour apparaît sans recharger. La liste n'est remplacée que si elle a changé.
   useEffect(() => {
     let alive = true;
-    fetchTeamVideos().then((list) => {
-      if (alive && list) setPublished(list);
+    let last = '';
+    const load = () =>
+      fetchTeamVideos().then((list) => {
+        if (!alive || !list) return;
+        const text = JSON.stringify(list);
+        if (text === last) return;
+        last = text;
+        setPublished(list);
+      });
+    load();
+    const timer = setInterval(load, REFRESH_MS);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') load();
     });
     return () => {
       alive = false;
+      clearInterval(timer);
+      sub.remove();
     };
   }, []);
 
@@ -1079,7 +1094,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return () => clearTimeout(timer);
   }, [reactionsKey, pushReactions]);
 
-  // Tour de contrôle : à l'ouverture, toutes les 60 s et au retour au premier plan, on renvoie
+  // Tour de contrôle : à l'ouverture, toutes les 45 s et au retour au premier plan, on renvoie
   // ce qui n'est pas parti, puis on relit les statuts réglés par l'équipe.
   useEffect(() => {
     if (!boxId || !TEAM_ENDPOINT) return;
@@ -1090,7 +1105,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (pro) d.requests.filter((r) => !r.transmitted).forEach(sendToTeam);
       if (reactionsDirty.current) pushReactions();
       if (!acc) return;
-      const tracked = await fetchTracking(acc.id);
+      let tracked = await fetchTracking(acc.id);
+      // Relecture manquée (réseau, démarrage de la tour) : un seul nouvel essai, sans attendre le tour suivant.
+      if (tracked === null) {
+        await new Promise((resolve) => setTimeout(resolve, RETRY_MS));
+        if (!alive) return;
+        tracked = await fetchTracking(acc.id);
+      }
       if (alive && tracked && tracked.length > 0) setData((prev) => applyTracking(prev, tracked));
       // Livraison au Sénégal en cours : la position du téléphone est rafraîchie pour le livreur,
       // seulement si le client l'a partagée à la commande (aucune nouvelle demande d'accord).
