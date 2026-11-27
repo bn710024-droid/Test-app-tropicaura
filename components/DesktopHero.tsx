@@ -20,6 +20,7 @@ import { Glow } from './Glow';
 import { buildSlides } from './HomeHero';
 import { Pressable } from './Tap';
 import { RATIO } from '../lib/ratios';
+import { useStore } from '../lib/store';
 import { C, CLIP, F, R } from '../lib/theme';
 
 const HEIGHT = 420;
@@ -32,7 +33,9 @@ const AUTO_MS = 7000;
  * mettent le défilement en pause.
  */
 export function DesktopHero({ width, onOpen }: { width: number; onOpen: (id: string) => void }) {
-  const slides = useMemo(buildSlides, []);
+  // Annonces et produits publiés par la tour (comme le bandeau du téléphone).
+  const { campaigns, byId } = useStore();
+  const slides = useMemo(() => buildSlides(campaigns, byId), [campaigns, byId]);
   const reduced = useReducedMotion();
   const [index, setIndex] = useState(0);
   const paused = useRef(false);

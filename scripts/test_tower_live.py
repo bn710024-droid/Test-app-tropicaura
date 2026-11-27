@@ -234,6 +234,11 @@ with sync_playwright() as pw:
         check('app : statut « Validée » relu dans la tour en ≤ 60 s', delay is not None and delay <= 62,
               f'({delay and round(delay)} s)')
         page.screenshot(path=str(SHOTS / 'live-4-commande-validee.png'))
+        first_at = o['location']['at']
+        moved = lambda: next((x for x in api('GET', '/api/orders')['orders'] if x['id'] == o['id']), {}).get('location', {}).get('at') != first_at
+        delay = wait_for(page, moved, 75)
+        check('app : position du livreur rafraîchie pendant le suivi (sans nouvel accord)', delay is not None,
+              f'({delay and round(delay)} s)')
         api('DELETE', '/api/orders', {'id': o['id']})
 
     # ── Livraison GP : pays desservis réglés dans la tour → proposés à la validation (adresse France)

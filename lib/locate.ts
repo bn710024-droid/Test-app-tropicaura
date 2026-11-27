@@ -120,6 +120,33 @@ export async function locate(): Promise<Located> {
 }
 
 /**
+ * Position actuelle SANS rien demander : seulement si le client a déjà accordé l'autorisation
+ * (à la confirmation d'une commande au Sénégal). Sinon, ou en cas d'échec : `null`.
+ * Sert à rafraîchir la position pour le livreur tant que la commande est en cours.
+ */
+export async function coordsIfAllowed(): Promise<{
+  latitude: number;
+  longitude: number;
+  accuracy: number | null;
+} | null> {
+  try {
+    const { granted } = await withTimeout(Location.getForegroundPermissionsAsync(), 5000);
+    if (!granted) return null;
+    const position = await withTimeout(
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+      20000,
+    );
+    return {
+      latitude: position.coords.latitude,
+      longitude: position.coords.longitude,
+      accuracy: position.coords.accuracy ?? null,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Coordonnées brutes de l'utilisateur, pour le livreur (Sénégal). Comme `locate()`,
  * l'autorisation est demandée explicitement : refus → LocateError('denied'), rien n'est
  * collecté. Les coordonnées ne quittent pas l'appareil tant qu'aucun serveur n'est connecté.

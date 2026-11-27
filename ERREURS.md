@@ -7,7 +7,7 @@ Format : écran · étapes pour reproduire · cause probable · correctif propos
 
 Relevé automatique de cette nuit (scripts `hunt_errors.py` et `hunt_interactions.py`, 390×844 et
 1440×900, ~70 écrans et gestes) : **0 erreur console, 0 erreur de page, 0 requête en échec**.
-`npx tsc --noEmit` : 0 erreur. `npx expo lint` : 0 erreur, 26 avertissements (voir n° 10).
+`npx tsc --noEmit` : 0 erreur. `npx expo lint` : 0 erreur, 26 avertissements (voir n° 8).
 
 ---
 
@@ -56,39 +56,22 @@ Relevé automatique de cette nuit (scripts `hunt_errors.py` et `hunt_interaction
 - **Correctif** : ajouter un onglet Photos (le correctif obsolète de la tour contient un
   `PhotoPosts.tsx` de référence).
 
-### 7. Position du livreur non rafraîchie pendant la livraison (Sénégal)
-- **Cause** : l'app envoie la position avec la commande, pas les mises à jour
-  (`POST { action: 'position' }` tant que `tracking: true`). La fonction `sendPosition` est
-  prête dans `lib/transmission.ts`, non appelée.
-- **Correctif** : dans la boucle de suivi (store), si `tracking` et autorisation déjà accordée,
-  relever la position sans redemander, puis `sendPosition`.
-
-### 8. Numéro de commande sur 4 chiffres (`PR-1234`)
-- **Cause** : `String(now).slice(-5, -1)` (lib/store.tsx). La tour distingue par compte, donc
-  pas de mélange, mais deux clients peuvent avoir le même numéro.
-- **Correctif** : 6 caractères alphanumériques aléatoires.
-
-### 9. Identifiant de compte prévisible
+### 7. Identifiant de compte prévisible
 - **Cause** : dérivé de l'heure de création ; `GET ?compte=` ne livre que des statuts.
 - **Correctif** : identifiant aléatoire 128 bits + secret de compte (SecureStore) exigé par la tour.
 
-### 10. 26 avertissements ESLint (règles du compilateur React)
+### 8. 26 avertissements ESLint (règles du compilateur React)
 - **Cause** : `react-hooks/immutability`, `refs`, `set-state-in-effect`, `use-memo` signalent
   les valeurs partagées Reanimated (`x.value = …`) dans TabBar, Reels, ProductCard, PageSwipe,
   PressableScale, HeartButton… C'est le fonctionnement normal de Reanimated.
 - **Correctif** : aucun nécessaire ; code d'animation volontairement non touché.
 
-### 11. `DesktopHero` lit les annonces embarquées, pas celles de la tour
-- **Cause** : `useMemo(buildSlides, [])` sans les annonces du store. Sans effet aujourd'hui
-  (`DESKTOP_WEB = false`).
-- **Correctif** : passer `campaigns` et `products` du store, comme `HomeHero`.
-
-### 12. Emballages réservés aux professionnels non proposés aux pros
+### 9. Emballages réservés aux professionnels non proposés aux pros
 - **Cause** : l'app n'affiche les formats que dans l'espace particuliers ; la tour exclut
   `audience: 'pros'` de `?v=2`.
 - **Correctif** : à décider (les pros commandent par offre avion / bateau).
 
-### 13. Bandeau : accroche « Campagne à venir · dès mai » déduite par l'app
+### 10. Bandeau : accroche « Campagne à venir · dès mai » déduite par l'app
 - **Cause** : la tour n'a pas de champs `kicker` / `title` pour une annonce ; l'app les déduit
   de la saison du produit.
 - **Correctif** : ajouter accroche et titre à l'éditeur d'annonce de la tour (publiés tels quels).

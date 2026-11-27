@@ -30,7 +30,7 @@ import {
 import { countryName, isCountry, transportFee } from './countries';
 import { PAYMENTS } from './data';
 import type { Campaign, Product } from './data';
-import { deviceCountry } from './locate';
+import { coordsIfAllowed, deviceCountry } from './locate';
 import {
   contentsText,
   euro,
@@ -51,6 +51,7 @@ import {
   buildOrderPayload,
   buildRequestPayload,
   fetchTracking,
+  sendPosition,
   transmit,
 } from './transmission';
 import { REFRESH_MS, TEAM_ENDPOINT } from './config';
@@ -384,6 +385,15 @@ function sanitize(
           )
         : {},
   };
+}
+
+/**
+ * Référence lisible d'une commande ou d'une demande : 6 caractères sans ambiguïté (ni O/0 ni
+ * I/1). Les 4 chiffres d'avant pouvaient se répéter d'un client à l'autre.
+ */
+function referenceCode() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return Array.from({ length: 6 }, () => alphabet[Math.floor(Math.random() * alphabet.length)]).join('');
 }
 
 /**
@@ -964,7 +974,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const now = Date.now();
       const order: Order = {
         id: now.toString(36),
-        number: `PR-${String(now).slice(-5, -1)}`,
+        number: `PR-${referenceCode()}`,
         createdAt: now,
         lines,
         subtotal,
@@ -1016,7 +1026,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const request: ProRequest = {
         ...fields,
         id: now.toString(36),
-        number: `DP-${String(now).slice(-5, -1)}`,
+        number: `DP-${referenceCode()}`,
         createdAt: now,
         lines,
         incoterm: live.current.data.incoterm,
@@ -1082,6 +1092,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (!acc) return;
       const tracked = await fetchTracking(acc.id);
       if (alive && tracked && tracked.length > 0) setData((prev) => applyTracking(prev, tracked));
+      // Livraison au Sénégal en cours : la position du téléphone est rafraîchie pour le livreur,
+      // seulement si le client l'a partagée à la commande (aucune nouvelle demande d'accord).
+      const follow = (tracked ?? []).filter(
+        (t) => t.type === 'commande' && t.tracking && d.orders.some((o) => o.number === t.reference && o.location),
+      );
+      if (follow.length > 0) {
+        const spot = await coordsIfAllowed();
+        if (alive && spot) follow.forEach((t) => sendPosition(acc.id, t.reference, spot));
+      }
     };
     sync();
     const timer = setInterval(sync, REFRESH_MS);
