@@ -8,6 +8,11 @@ Chaque test écrit ses résultats dans scripts/shots/online-<nom>.json : [{fonct
 """
 import base64, json, pathlib, re, struct, sys, time, urllib.request, zlib
 
+# Console Windows (cp1252) : les libellés (« → », « ≤ ») s'écrivent en UTF-8, sans planter.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, 'reconfigure'):
+        _stream.reconfigure(encoding='utf-8', errors='replace')
+
 HERE = pathlib.Path(__file__).resolve().parent
 SHOTS = HERE.parent / 'shots'
 SHOTS.mkdir(exist_ok=True)
