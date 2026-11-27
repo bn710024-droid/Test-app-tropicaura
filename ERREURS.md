@@ -9,7 +9,7 @@
 5. Relevé automatique ~90 écrans et gestes (390×844, 1440×900) : 0 erreur console / page / réseau.
 6. Textes devenus faux corrigés (tour : « appliquez le correctif », adresse `?v=2`… ; app : « aucune commande transmise »…).
 7. Tour : pays GP, montants dans leur devise (F CFA), devises jamais additionnées dans les statistiques, `npm run local`.
-8. Non fait (décision de design) : publications photo, messages de suivi affichés, photos d'emballage, kg au lieu de « 5000 g ».
+8. Non fait (décision de design) : publications photo, messages de suivi affichés, photos d'emballage. (Contenus en kg dès 1 000 g : corrigé le 27/11 au matin.)
 9. À configurer par toi (`A-CONNECTER.md`) : variables Supabase de la tour, `EXPO_PUBLIC_CONTROL_TOWER_URL`, identité EAS.
 10. Non testé : téléphone, vraie base Supabase, déploiement Vercel. Aucun style ni animation modifié (quai, carrousel, emballages intacts) ; seul ajout visuel : la carte « Produit introuvable » demandée.
 
@@ -32,12 +32,10 @@ Relevé automatique de cette nuit (scripts `hunt_errors.py` et `hunt_interaction
 - **Correctif** : téléverser les photos dans la tour (Produits › Emballages), ou publier
   `photo: { asset: 'format:<produit>:<emballage>' }` par défaut dans `shared/catalog-v2.js`.
 
-### 2. Contenu affiché en grammes au-delà du kilo (« contient 5000 g »)
-- **Écran** : fiche produit avec un emballage de 5 kg.
-- **Cause** : l'app affiche `grams` tel quel.
-- **Correctif** : afficher en kg à partir de 1 000 g dans `lib/format.ts` (non fait : texte de la
-  fiche, à valider par vous). Le libellé de prix, lui, est corrigé (« par cagette de 5 kg »,
-  publié par la tour).
+### 2. ~~Contenu affiché en grammes au-delà du kilo (« contient 5000 g »)~~ — corrigé
+- **Corrigé** (27/11, matin) : `lib/weight.ts` — ≥ 1 000 g → « 5 kg », « 1,5 kg » (une décimale
+  au plus), < 1 000 g → « 500 g » ; fiche, cartes emballage, texte des commandes, et côté tour
+  (`packContent`). Tests : `scripts/test_contents.mjs`, `test_tower_live.py`.
 
 ### 3. Forfait transport codé en dur dans l'app (6 € Sénégal, 48 € France…)
 - **Écran** : Validation de commande › Transport.

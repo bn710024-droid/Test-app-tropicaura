@@ -1,6 +1,7 @@
 import type { Campaign, CategoryId, Photo, Product, ProductFormat } from '../data';
 import { CAMPAIGN_ASSETS, FORMAT_ASSETS, PHOTO_ASSETS, PREVIEW_ASSETS } from './embedded';
 import { resolveOffer, resolveFormatsForCountry, visibleIn } from './rules';
+import { contentsText } from '../weight';
 import { CATEGORY_LABEL, FILTERS } from '../data';
 import type { FilterId } from '../data';
 import type {
@@ -126,7 +127,7 @@ function formatLine(p: Product, f: ProductFormat): Product {
     price: f.price ?? 0,
     noPrice: f.price === null,
     unit: 'unit',
-    unitLabel: f.unitLabel ?? `le ${f.noun[0]}${f.grams ? ` de ${f.grams} g` : ''}`,
+    unitLabel: f.unitLabel ?? `le ${f.noun[0]}${f.grams ? ` de ${contentsText(f.grams)}` : ''}`,
     noun: f.noun,
     step: f.step ?? 1,
     min: f.min ?? 1,

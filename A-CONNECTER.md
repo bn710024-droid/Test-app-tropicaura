@@ -1,5 +1,56 @@
 # À CONNECTER — réglages à faire par le propriétaire (le code est prêt)
 
+## Checklist — brancher Vercel + Supabase en 5 étapes
+
+1. **Supabase : créer la base.** Sur supabase.com, créez un projet. Dans **SQL Editor**, collez
+   tout le fichier `supabase/schema.sql` du dépôt `Test-control`, puis **Run**. Dans **Storage**,
+   créez deux espaces **publics** : `catalogue` (photos) et `publications` (vidéos, photos).
+   *Vérifier* : **Table Editor** liste `products`, `orders`, `settings`, `product_requests`,
+   `publication_reactions`… et **Storage** montre les deux espaces.
+
+2. **Générer les deux secrets de la tour.** Lancez deux fois cette commande (deux valeurs
+   **différentes**) et gardez-en une copie hors de Vercel (gestionnaire de mots de passe) :
+   ```powershell
+   [Convert]::ToHexString([System.Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
+   ```
+   La première devient `SEAL_SECRET`, la seconde `VAULT_SECRET`. Perdre `VAULT_SECRET` rend les
+   commandes enregistrées illisibles.
+   *Vérifier* : deux chaînes de 64 caractères, différentes.
+
+3. **Vercel, projet de la tour (`Test-control`) : coller les variables.** Au 27/11, aucun des deux
+   dépôts n'est relié à Vercel (aucun déploiement ni statut sur GitHub). D'abord : Vercel → Add
+   New → Project → importer `bn710024-droid/Test-control` (framework **Vite**, réglages proposés).
+   Chaque PR aura ensuite sa preview. Puis Settings → Environment Variables, en cochant
+   **Production** et **Preview** :
+   `VITE_SUPABASE_URL` et `NEXT_PUBLIC_SUPABASE_URL` = Project URL ; `VITE_SUPABASE_ANON_KEY` =
+   clé `anon` ; `SUPABASE_SERVICE_ROLE_KEY` = clé `service_role` (Supabase → Project Settings →
+   API) ; `SEAL_SECRET` et `VAULT_SECRET` (étape 2). Puis Deployments → **Redeploy**.
+   *Vérifier* : la tour s'ouvre sans « Configuration manquante » ;
+   `https://<tour>/api/catalog?v=2` renvoie un JSON qui commence par `{"schema":2` ;
+   Réglages → « Vérifier le document publié » ne signale aucune erreur.
+
+4. **Vercel, projet de l'application (`Test-app-tropicaura`) : coller l'adresse de la tour.**
+   Importez le dépôt de la même façon (Add New → Project ; `vercel.json` fournit le build et le
+   dossier `dist`). Puis Settings → Environment Variables (Production et Preview) :
+   `EXPO_PUBLIC_CONTROL_TOWER_URL` = `https://<tour>`, **sans `/` final**. Puis **Redeploy** : la
+   variable est lue au moment du build, un simple rechargement ne suffit pas.
+   *Vérifier* : dans l'application, Profil → carte « Tour de contrôle » : « Reliée à la base de
+   contrôle de notre équipe… » ; la ligne « Catalogue » dit « reçu de la base de contrôle » ;
+   l'écran Commandes n'affiche plus l'encadré « Mode test ».
+
+5. **Essai de bout en bout (5 minutes).** Dans la tour, changez le prix d'un produit. *Vérifier* :
+   le nouveau prix apparaît dans l'application ouverte en **moins de 60 s**, sans recharger.
+   Passez ensuite une commande test dans l'application. *Vérifier* : elle arrive dans la tour
+   (Commandes) ; pointez le paiement, l'application affiche « Validée » en moins de 60 s.
+   Remettez le prix d'origine.
+
+En cas d'échec : l'onglet **Logs** du déploiement Vercel de la tour montre l'erreur de l'API
+(variable manquante, table absente). Le détail de chaque réglage suit.
+
+---
+
+## Détail
+
 Tout le branchement application ↔ tour de contrôle est codé et testé **contre une tour locale**
 (base simulée, `npm run local` dans le dépôt de la tour). Il ne reste que de la configuration.
 Rien ci-dessous n'a été fait cette nuit : ce sont des clés, des comptes ou des choix qui

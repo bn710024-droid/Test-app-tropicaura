@@ -123,7 +123,7 @@ branche `nuit-branchement` (pas `main`). Décisions : `DECISIONS.md`. Réglages 
 **Non testé** : sur téléphone (iOS / Android) ; contre la vraie base Supabase (aucune clé sur
 le poste) ; déploiement Vercel (aucun projet créé).
 
-**Restant** : voir `ERREURS.md` (photos d'emballage, « 5000 g » au lieu de 5 kg, forfait
+**Restant** : voir `ERREURS.md` (photos d'emballage, forfait
 transport codé en dur, messages de suivi non affichés, publications photo, identifiant de compte
 prévisible…) et `A-CONNECTER.md` (Supabase, variable de la tour, identité EAS).
 

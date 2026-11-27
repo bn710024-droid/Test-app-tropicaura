@@ -743,7 +743,7 @@ export function ProductScreen() {
                 </View>
                 <Text style={styles.variety}>
                   {selFormat
-                    ? `${selFormat.label}${selFormat.grams ? ` · contient ${selFormat.grams} g` : ''} · ${p.origin}`
+                    ? `${selFormat.label}${selFormat.grams ? ` · contient ${contentsText(selFormat.grams)}` : ''} · ${p.origin}`
                     : `${p.variety} · ${p.origin}`}
                 </Text>
                 <View style={styles.priceRow}>
@@ -756,7 +756,7 @@ export function ProductScreen() {
                 </View>
                 {selFormat?.grams ? (
                   <Text style={styles.contents}>
-                    Contenu : {selFormat.grams} g par {selFormat.noun[0]} · contenu total{' '}
+                    Contenu : {contentsText(selFormat.grams)} par {selFormat.noun[0]} · contenu total{' '}
                     {contentsText(selFormat.grams * qty)}
                   </Text>
                 ) : null}

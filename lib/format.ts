@@ -231,9 +231,8 @@ export function selectedFormat(p: Product, formats: Record<string, string>): Pro
   return (p.formats ?? []).find((f) => f.id === id) ?? null;
 }
 
-/** Contenu total d'un nombre d'emballages : « 10 kg », « 400 g ». */
-export const contentsText = (grams: number) =>
-  grams >= 1000 ? kgText(grams / 1000) : `${grams}\u00A0g`;
+/** Contenu d'un ou plusieurs emballages : « 10 kg », « 1,5 kg », « 400 g ». */
+export { contentsText } from './weight';
 
 /**
  * État de diffusion d'une annonce : affichée seulement si l'équipe l'a activée ET si la

@@ -123,6 +123,10 @@ with sync_playwright() as pw:
     cag.first.click()
     page.wait_for_timeout(900)
     check('app : prix de la cagette 14,50 €', page.get_by_text('14,50 €', exact=True).count() >= 1)
+    shown = page.locator('body').inner_text().replace('\u00A0', ' ').replace('\u202F', ' ')
+    check('app : contenu « 5 kg » sur la carte et la fiche, jamais « 5000 g »',
+          '/ 5 kg' in shown and 'contient 5 kg' in shown and 'Contenu : 5 kg par cagette' in shown
+          and '5000 g' not in shown, f'({[l for l in shown.splitlines() if "kg" in l][:4]})')
     page.screenshot(path=str(SHOTS / 'live-3-apres-fiche.png'))
 
     # ── Remise en état de la tour
