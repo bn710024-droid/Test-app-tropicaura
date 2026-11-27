@@ -1,0 +1,193 @@
+"""
+Test de bout en bout — application branchée sur la tour de contrôle.
+
+Prérequis : la tour tourne (`npm run local` dans le dépôt de la tour → http://localhost:3000) et
+l'application est servie avec EXPO_PUBLIC_CONTROL_TOWER_URL=http://localhost:3000
+(`npx expo start --web`, ou un export web servi ailleurs).
+
+    python scripts/test_tower_live.py [APP_URL] [TOWER_URL]
+
+Scénario « catalogue » : prix modifié, produit masqué, emballage ajouté dans la tour → visibles
+dans l'application en moins de 60 s, sans recharger la page. La tour est remise dans son état
+initial à la fin. Scénario « commande » : commande passée dans l'application → reçue par la tour
+→ statut changé dans la tour → affiché dans l'application.
+Captures dans scripts/shots/.
+"""
+import json, re, sys, time, pathlib, urllib.request
+from playwright.sync_api import sync_playwright
+
+APP = sys.argv[1] if len(sys.argv) > 1 else 'http://localhost:8082'
+TOWER = sys.argv[2] if len(sys.argv) > 2 else 'http://localhost:3000'
+SHOTS = pathlib.Path(__file__).resolve().parent / 'shots'
+SHOTS.mkdir(exist_ok=True)
+RESULTS = []
+
+
+def check(name, ok, extra=''):
+    RESULTS.append((name, ok))
+    print(('PASS' if ok else 'FAIL'), name, extra, flush=True)
+
+
+def api(method, path, body=None):
+    req = urllib.request.Request(TOWER + path, method=method,
+                                 data=json.dumps(body).encode() if body is not None else None,
+                                 headers={'Content-Type': 'application/json'})
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.loads(r.read() or b'null')
+
+
+def product(pid):
+    return next(p for p in api('GET', '/api/products') if p['id'] == pid)
+
+
+def wait_for(page, fn, timeout_s):
+    start = time.time()
+    while time.time() - start < timeout_s:
+        if fn():
+            return time.time() - start
+        page.wait_for_timeout(1000)
+    return None
+
+
+def signup(page, name, phone):
+    page.goto(APP)
+    page.get_by_role('button', name='Créer mon compte').first.click(timeout=60000)
+    page.get_by_role('radio', name=re.compile('^Particulier')).click()
+    page.get_by_text('Vos informations').first.wait_for(timeout=10000)
+    page.get_by_label('Votre nom').fill(name)
+    page.get_by_label('Numéro de téléphone').fill(phone)
+    page.get_by_role('button', name='Choisir votre pays').click()
+    page.get_by_label('Rechercher un pays').fill('Sénégal')
+    page.wait_for_timeout(300)
+    page.get_by_role('radio', name=re.compile('^Sénégal')).first.click()
+    page.get_by_role('button', name='Continuer').click()
+    page.get_by_text('Choix de connexion').first.wait_for(timeout=10000)
+    page.get_by_role('radio', name=re.compile('^Numéro de téléphone')).click()
+    page.get_by_role('button', name='Continuer').click()
+    page.get_by_text('Recommandez Primeur').wait_for(timeout=10000)
+    page.get_by_role('button', name=re.compile('^Entrer dans l')).click()
+    page.get_by_text('Tout l’étal').wait_for(timeout=30000)
+
+
+with sync_playwright() as pw:
+    browser = pw.chromium.launch()
+    ctx = browser.new_context(viewport={'width': 390, 'height': 844}, has_touch=True,
+                              device_scale_factor=2, is_mobile=True,
+                              geolocation={'latitude': 14.7167, 'longitude': -17.4677},
+                              permissions=['geolocation'])
+    page = ctx.new_page()
+    catalog_calls = []
+    page.on('request', lambda r: catalog_calls.append(time.time()) if '/api/catalog?v=2' in r.url else None)
+    signup(page, 'Test Tour', '+221 77 222 33 44')
+    check('app lit le catalogue de la tour (?v=2)', len(catalog_calls) >= 1)
+
+    pomme = product('pomme')
+    poire = product('poire')
+    old_price = pomme['retail']['price']
+    new_price = round(old_price + 0.9, 2)
+    old_packs = pomme['packagings']
+    price_txt = f"{new_price:.2f}".replace('.', ',')
+
+    home = lambda: page.inner_text('body')
+    check('avant : Poire visible', 'Poire' in home())
+    check('avant : prix pomme d’origine', f"{old_price:.2f}".replace('.', ',') in home())
+    page.screenshot(path=str(SHOTS / 'live-1-avant.png'))
+
+    # ── Modifications dans la tour (mêmes routes que l'écran Produits)
+    retail = dict(pomme['retail'], price=new_price)
+    r = api('PUT', '/api/products', {'updates': [
+        {'id': 'pomme', 'changes': {'retail': retail}, 'expected_updated_at': pomme['updated_at']},
+        {'id': 'poire', 'changes': {'available': False}, 'expected_updated_at': poire['updated_at']},
+    ]})
+    check('tour : prix + masquage enregistrés', all(x.get('ok') for x in r['results']), json.dumps(r)[:200])
+    cagette = {'id': 'cagette', 'label': 'Cagette', 'qty': 5, 'unit': 'kg', 'price': 14.5, 'step': 1,
+               'audience': 'tous', 'available': True, 'description': 'Cagette bois de 5 kg'}
+    api('PUT', '/api/products', {'id': 'pomme', 'packagings': old_packs + [cagette]})
+    changed_at = time.time()
+    v2 = api('GET', '/api/catalog?v=2')
+    vp = next(p for p in v2['products'] if p['id'] == 'pomme')
+    check('tour : ?v=2 publie le nouveau prix et l’emballage', vp['retail']['price'] == new_price
+          and any(f['id'] == 'cagette' and f['grams'] == 5000 and f['price'] == 14.5 for f in vp['formats']))
+
+    # ── L'application suit, sans recharger
+    delay = wait_for(page, lambda: price_txt in home() and 'Poire' not in home(), 75)
+    check('app : nouveau prix + produit masqué en ≤ 60 s sans recharger',
+          delay is not None and delay <= 62, f'({delay and round(delay)} s)')
+    page.screenshot(path=str(SHOTS / 'live-2-apres-accueil.png'))
+    page.get_by_role('button', name=re.compile('^Pomme')).first.click()
+    page.get_by_text('Choisissez votre format').wait_for(timeout=15000)
+    cag = page.get_by_role('radio', name=re.compile('^Cagette'))
+    check('app : emballage « Cagette » proposé sur la fiche', cag.count() == 1)
+    initial = page.get_by_role('radio', name=re.compile('^Produit initial'))
+    check('app : aucun emballage présélectionné', 'true' in (initial.first.get_attribute('aria-checked') or ''))
+    cag.first.click()
+    page.wait_for_timeout(900)
+    check('app : prix de la cagette 14,50 €', page.get_by_text('14,50 €', exact=True).count() >= 1)
+    page.screenshot(path=str(SHOTS / 'live-3-apres-fiche.png'))
+
+    # ── Remise en état de la tour
+    pomme2, poire2 = product('pomme'), product('poire')
+    api('PUT', '/api/products', {'updates': [
+        {'id': 'pomme', 'changes': {'retail': dict(pomme2['retail'], price=old_price)}},
+        {'id': 'poire', 'changes': {'available': True}},
+    ]})
+    api('PUT', '/api/products', {'id': 'pomme', 'packagings': old_packs})
+    check('tour remise en état', product('pomme')['retail']['price'] == old_price and product('poire')['available'])
+
+    # ── Scénario « commande » : app → tour → statut changé dans la tour → app
+    page.get_by_role('button', name='Retour').first.click()
+    page.wait_for_timeout(600)
+    page.get_by_label('Rechercher un fruit ou un légume').fill('pomme')
+    page.wait_for_timeout(500)
+    page.get_by_role('button', name=re.compile('^Pomme Gala')).first.click()
+    page.get_by_text('Dans le même rayon').wait_for(timeout=15000)
+    page.get_by_role('button', name=re.compile('^Ajouter .* au panier')).click()
+    page.wait_for_timeout(500)
+    page.get_by_role('button', name='Ouvrir le panier').first.click()
+    page.get_by_role('button', name=re.compile('^Commander')).click()
+    page.get_by_role('heading', name='Votre commande').wait_for(timeout=15000)
+    page.get_by_role('radio', name='Valider pour moi').click()
+    page.get_by_role('button', name=re.compile('Ajouter votre adresse')).click()
+    page.get_by_label('Nom du destinataire').fill('Awa Diop Tour')
+    page.get_by_role('button', name=re.compile('Pays')).click()
+    page.get_by_label('Rechercher un pays').fill('Sénégal')
+    page.wait_for_timeout(400)
+    page.get_by_role('radio', name=re.compile('^Sénégal')).first.click()
+    page.get_by_role('textbox', name='Adresse', exact=True).fill('12 Rue 10, Médina')
+    page.get_by_role('textbox', name='Ville', exact=True).fill('Dakar')
+    page.get_by_role('button', name=re.compile('Enregistrer l’adresse')).click()
+    page.wait_for_timeout(900)
+    page.get_by_role('button', name='Partager ma position pour le livreur').click()
+    page.wait_for_timeout(3000)
+    page.get_by_label('E-mail', exact=True).fill('awa@exemple.test')
+    page.get_by_label('Téléphone ou WhatsApp').fill('+221 77 123 45 67')
+    posted = []
+    page.on('request', lambda r: posted.append(r.post_data or '') if r.method == 'POST' and '/api/orders' in r.url else None)
+    page.get_by_role('button', name=re.compile('^Payer et confirmer')).click()
+    page.wait_for_timeout(3000)
+    check('app : commande envoyée à la tour (POST /api/orders)', any('"type":"commande"' in b for b in posted))
+    page.get_by_role('button', name='Suivre ma commande').click()
+    page.wait_for_timeout(1200)
+    check('app : commande « En validation »', page.get_by_label(re.compile('^Suivi : En validation')).count() >= 1)
+
+    orders = api('GET', '/api/orders')['orders']
+    mine = [o for o in orders if o['customer'].get('name') == 'Awa Diop Tour']
+    check('tour : commande reçue', len(mine) == 1, f'({len(mine)})')
+    if mine:
+        o = mine[0]
+        check('tour : lignes, devise, position, paiement choisi', len(o['lines']) == 1 and o['lines'][0]['qty'] > 0
+              and o.get('currency') == 'EUR' and o.get('location') is not None and o['status'] == 'attente')
+        r = api('PUT', '/api/orders', {'id': o['id'], 'paid': True, 'via': 'wave'})
+        check('tour : paiement pointé → confirmée', r.get('status') == 'confirmee')
+        delay = wait_for(page, lambda: page.get_by_label(re.compile('^Suivi : Validée')).count() >= 1
+                         and page.get_by_label(re.compile('^Suivi : En validation')).count() == 0, 75)
+        check('app : statut « Validée » relu dans la tour en ≤ 60 s', delay is not None and delay <= 62,
+              f'({delay and round(delay)} s)')
+        page.screenshot(path=str(SHOTS / 'live-4-commande-validee.png'))
+        api('DELETE', '/api/orders', {'id': o['id']})
+
+    browser.close()
+
+failed = [n for n, ok in RESULTS if not ok]
+print(f"\n{len(RESULTS)} vérifications, {len(failed)} échec(s).")
+sys.exit(1 if failed else 0)
