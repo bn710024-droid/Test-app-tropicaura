@@ -186,6 +186,56 @@ with sync_playwright() as pw:
         page.screenshot(path=str(SHOTS / 'live-4-commande-validee.png'))
         api('DELETE', '/api/orders', {'id': o['id']})
 
+    # ── Scénario « demande pro » : app → tour → étape changée dans la tour → app
+    ctx2 = browser.new_context(viewport={'width': 390, 'height': 844}, has_touch=True, is_mobile=True)
+    p2 = ctx2.new_page()
+    p2.goto(APP)
+    p2.get_by_role('button', name='Créer mon compte').first.click(timeout=60000)
+    p2.get_by_role('radio', name=re.compile('^Professionnel')).click()
+    p2.get_by_text('Votre activité').first.wait_for(timeout=10000)
+    p2.get_by_label('Votre nom').fill('Pro Tour Test')
+    p2.get_by_label('Téléphone', exact=True).fill('+221 77 765 43 21')
+    p2.get_by_role('button', name='Choisir votre pays').click()
+    p2.get_by_label('Rechercher un pays').fill('Sénégal')
+    p2.wait_for_timeout(300)
+    p2.get_by_role('radio', name=re.compile('^Sénégal')).first.click()
+    p2.get_by_role('button', name='Continuer').click()
+    p2.get_by_role('radio', name=re.compile('^Numéro de téléphone')).click()
+    p2.get_by_role('button', name='Continuer').click()
+    p2.get_by_role('button', name=re.compile('^Entrer dans l')).click()
+    p2.get_by_text('Catalogue professionnel').wait_for(timeout=30000)
+    p2.get_by_label('Rechercher un fruit ou un légume').fill('mangue séchée')
+    p2.wait_for_timeout(500)
+    p2.get_by_role('button', name=re.compile('^Mangue séchée')).first.click()
+    p2.get_by_text('Offre professionnelle').wait_for(timeout=15000)
+    p2.get_by_role('button', name=re.compile('^Ajouter .* à la demande')).click()
+    p2.wait_for_timeout(600)
+    p2.get_by_role('button', name='Ouvrir ma demande en cours').first.click()
+    p2.get_by_role('button', name='Finaliser la demande').click()
+    p2.get_by_label('E-mail', exact=True).fill('pro@exemple.test')
+    p2.get_by_role('textbox', name=re.compile('^Société')).fill('Société Test Tour')
+    sent = []
+    p2.on('request', lambda r: sent.append(r.post_data or '') if r.method == 'POST' and '/api/orders' in r.url else None)
+    p2.get_by_role('button', name='Envoyer la demande').click()
+    p2.wait_for_timeout(3000)
+    check('app pro : demande envoyée à la tour', any('demande_professionnelle' in b for b in sent))
+    pro = [o for o in api('GET', '/api/orders')['orders'] if o['customer'].get('company') == 'Société Test Tour']
+    check('tour : demande pro reçue (étape « Intérêt reçu »)', len(pro) == 1 and pro[0].get('stage') == 'interet',
+          f'({len(pro)})')
+    if pro:
+        r = api('PUT', '/api/orders', {'id': pro[0]['id'], 'stage': 'contrat'})
+        check('tour : étape « Contrat conclu » → confirmée', r.get('status') == 'confirmee')
+        tracked = api('GET', f"/api/orders?compte={pro[0]['customer']['account_id']}")['orders']
+        check('tour : suivi pro publié avec l’étape en clair', tracked and tracked[0].get('stageLabel') == 'Contrat conclu')
+        p2.goto(APP)  # retour à l'accueil (l'écran de succès est terminal)
+        p2.get_by_text('Catalogue professionnel').wait_for(timeout=30000)
+        p2.get_by_role('tab', name=re.compile('Commandes')).click()
+        delay = wait_for(p2, lambda: 'Confirmée' in p2.inner_text('body'), 75)
+        check('app pro : statut relu dans la tour (Confirmée)', delay is not None, f'({delay and round(delay)} s)')
+        p2.screenshot(path=str(SHOTS / 'live-5-demande-pro.png'))
+        api('DELETE', '/api/orders', {'id': pro[0]['id']})
+    ctx2.close()
+
     browser.close()
 
 failed = [n for n, ok in RESULTS if not ok]
