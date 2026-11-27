@@ -50,7 +50,7 @@ def wait_for(page, fn, timeout_s):
 
 
 def signup(page, name, phone):
-    page.goto(APP)
+    page.goto(APP, timeout=90000)
     page.get_by_role('button', name='Créer mon compte').first.click(timeout=60000)
     page.get_by_role('radio', name=re.compile('^Particulier')).click()
     page.get_by_text('Vos informations').first.wait_for(timeout=10000)
@@ -133,6 +133,21 @@ with sync_playwright() as pw:
     ]})
     api('PUT', '/api/products', {'id': 'pomme', 'packagings': old_packs})
     check('tour remise en état', product('pomme')['retail']['price'] == old_price and product('poire')['available'])
+
+    # ── Prix par pays : prix propre au Sénégal pour la pomme → le compte sénégalais le voit
+    pomme3 = product('pomme')
+    sn_price = round(pomme3['retail']['price'] + 0.55, 2)
+    r = api('PUT', '/api/products', {'updates': [{'id': 'pomme', 'changes': {
+        'retail': dict(pomme3['retail'], countryPrices=[{'countries': ['SN'], 'price': sn_price}])}}]})
+    check('tour : prix Sénégal enregistré', all(x.get('ok') for x in r['results']), json.dumps(r)[:160])
+    sn_txt = f"{sn_price:.2f}".replace('.', ',')
+    delay = wait_for(page, lambda: sn_txt in home(), 75)
+    check('app : compte Sénégal voit le prix Sénégal (countryPrices)', delay is not None, f'({delay and round(delay)} s)')
+    v2p = next(p for p in api('GET', '/api/catalog?v=2')['products'] if p['id'] == 'pomme')
+    check('tour : prix global inchangé, prix SN publié à part', v2p['retail']['price'] == pomme3['retail']['price']
+          and v2p['retail'].get('countryPrices') == [{'countries': ['SN'], 'price': sn_price}])
+    page.screenshot(path=str(SHOTS / 'live-5b-prix-pays.png'))
+    api('PUT', '/api/products', {'updates': [{'id': 'pomme', 'changes': {'retail': dict(pomme3['retail'], countryPrices=[])}}]})
 
     # ── Annonce publiée dans la tour → bandeau d'accueil de l'application
     page.get_by_role('button', name='Retour').first.click()
@@ -224,7 +239,7 @@ with sync_playwright() as pw:
     # ── Scénario « demande pro » : app → tour → étape changée dans la tour → app
     ctx2 = browser.new_context(viewport={'width': 390, 'height': 844}, has_touch=True, is_mobile=True)
     p2 = ctx2.new_page()
-    p2.goto(APP)
+    p2.goto(APP, timeout=90000)
     p2.get_by_role('button', name='Créer mon compte').first.click(timeout=60000)
     p2.get_by_role('radio', name=re.compile('^Professionnel')).click()
     p2.get_by_text('Votre activité').first.wait_for(timeout=10000)
