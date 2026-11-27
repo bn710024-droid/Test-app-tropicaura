@@ -132,7 +132,11 @@ type Sent = 'sent' | 'not_connected' | 'failed';
 
 /** Envoi d'un événement à l'outil de l'équipe. Sans adresse configurée, rien ne part. */
 async function post(path: string, body: Record<string, unknown>): Promise<Sent> {
-  if (!VIDEOS_ENDPOINT) return 'not_connected';
+  // La tour de contrôle n'a pas de route par événement (`…?public=videos/views` n'existe pas) :
+  // elle attend l'état complet du compte sur `?public=reactions` (voir LISEZ-MOI de la tour).
+  // Tant que cet envoi n'est pas branché, rien ne part : vues, J'aime et commentaires restent
+  // sur l'appareil.
+  if (!VIDEOS_ENDPOINT || VIDEOS_ENDPOINT.includes('/api/publications')) return 'not_connected';
   try {
     const response = await fetch(`${VIDEOS_ENDPOINT}/${path}`, {
       method: 'POST',

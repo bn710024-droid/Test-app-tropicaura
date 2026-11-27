@@ -1,6 +1,8 @@
 import type { Campaign, CategoryId, Photo, Product, ProductFormat } from '../data';
 import { CAMPAIGN_ASSETS, FORMAT_ASSETS, PHOTO_ASSETS, PREVIEW_ASSETS } from './embedded';
 import { resolveOffer, resolveFormatsForCountry, visibleIn } from './rules';
+import { CATEGORY_LABEL, FILTERS } from '../data';
+import type { FilterId } from '../data';
 import type {
   CatalogCampaign,
   CatalogDocument,
@@ -26,6 +28,52 @@ const CATEGORIES: CategoryId[] = [
   'seches',
   'transformes',
 ];
+
+/** Catégorie d'un produit : celle du catalogue si elle est connue (code ou rayons publiés). */
+function categoryOf(id: string, doc?: CatalogDocument): CategoryId {
+  if (CATEGORIES.includes(id as CategoryId)) return id as CategoryId;
+  if (doc?.categories?.some((c) => c.id === id)) return id;
+  return 'fruits';
+}
+
+/**
+ * Rayon de l'accueil (pastille ronde) : « Tout », « De saison », puis les rayons. `image` :
+ * photo publiée par la tour (ou produit illustrant) ; absente, l'accueil garde son illustration.
+ * `pro` faux : rayon masqué aux grossistes et importateurs.
+ */
+export type Shelf = { id: FilterId; label: string; image?: Photo; imageKey?: string; pro: boolean };
+
+function shelfImage(photo: { url: string } | { asset: string } | null | undefined) {
+  if (!photo) return {};
+  if ('url' in photo) return { image: { uri: photo.url } as Photo };
+  const local = PHOTO_ASSETS[photo.asset];
+  return local ? { image: local, imageKey: photo.asset } : {};
+}
+
+/**
+ * Rayons du catalogue publié (nom, ordre, image), sinon ceux de l'application. Les filtres
+ * « Tout » et « De saison » restent en tête, avec le nom réglé dans la tour s'il y en a un.
+ */
+export function shelvesOf(doc: CatalogDocument): Shelf[] {
+  if (!doc.categories || doc.categories.length === 0) {
+    return FILTERS.map((f) => ({ id: f.id, label: f.label, pro: true }));
+  }
+  return [
+    { id: 'tout', label: doc.filters?.all.label || 'Tout', ...shelfImage(doc.filters?.all.image), pro: true },
+    {
+      id: 'saison',
+      label: doc.filters?.season.label || 'De saison',
+      ...shelfImage(doc.filters?.season.image),
+      pro: true,
+    },
+    ...doc.categories.map((c) => ({
+      id: c.id,
+      label: c.label || CATEGORY_LABEL[c.id] || c.id,
+      ...shelfImage(c.image),
+      pro: c.pro,
+    })),
+  ];
+}
 
 const FALLBACK_PHOTO: Photo = require('../../assets/decor/leaf.webp');
 
@@ -100,13 +148,13 @@ export const lineId = (productId: string, mode: Mode | null) =>
 export const productIdOf = (id: string) => id.split(':')[0];
 
 /** Informations communes à tous les espaces. Le prix et l'unité viennent ensuite de l'offre. */
-function base(p: CatalogProduct): Product {
+function base(p: CatalogProduct, doc?: CatalogDocument): Product {
   const retail = p.retail;
   return {
     id: p.id,
     name: p.name,
     variety: p.variety,
-    category: CATEGORIES.includes(p.category as CategoryId) ? (p.category as CategoryId) : 'fruits',
+    category: categoryOf(p.category, doc),
     origin: p.origin,
     price: retail?.price ?? 0,
     unit: retail?.unit ?? 'kg',
@@ -176,7 +224,9 @@ export type Space = {
 
 /** Tous les produits disponibles, pour les affichages qui ne dépendent pas de l'espace. */
 export function allProducts(doc: CatalogDocument): Record<string, Product> {
-  return Object.fromEntries(doc.products.filter((p) => p.available).map((p) => [p.id, base(p)]));
+  return Object.fromEntries(
+    doc.products.filter((p) => p.available).map((p) => [p.id, base(p, doc)]),
+  );
 }
 
 /**
@@ -190,7 +240,7 @@ export function retailSpace(doc: CatalogDocument, country: string | null): Space
   // Deux disponibilités distinctes : le produit d'abord (filtré ci-dessus), puis ses
   // emballages — seuls ceux actifs ET disponibles pour ce pays sont proposés.
   const catalog = products.map((cp) => {
-    const p = base(cp);
+    const p = base(cp, doc);
     const resolved = resolveFormatsForCountry(cp.formats, country).map(mapFormat);
     return resolved.length > 0 ? { ...p, formats: resolved } : { ...p, formats: undefined };
   });
@@ -214,7 +264,7 @@ function line(
 ): Product {
   const o = resolveOffer(offer, doc.rules, incoterm);
   return {
-    ...base(p),
+    ...base(p, doc),
     id,
     productId: p.id,
     pro: true,

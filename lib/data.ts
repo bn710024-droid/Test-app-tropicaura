@@ -6,7 +6,9 @@ export type CategoryId =
   | 'legumes'
   | 'aromates'
   | 'seches'
-  | 'transformes';
+  | 'transformes'
+  // Rayon créé dans la tour de contrôle, inconnu du code : son nom vient du catalogue publié.
+  | (string & {});
 export type FilterId = 'tout' | 'saison' | CategoryId;
 
 export const FILTERS: { id: FilterId; label: string }[] = [

@@ -12,6 +12,13 @@
  * suivront sans modification (voir `source.ts`).
  */
 export const SCHEMA_VERSION = 1;
+/**
+ * Versions lues : 1 (catalogue embarqué) et 2 (catalogue publié par la tour de contrôle,
+ * `GET <tour>/api/catalog?v=2` — mêmes types, plus les clés facultatives `categories`,
+ * `filters`, `payments`, `productRequest` et les prix par pays `countryPrices`).
+ */
+export const SUPPORTED_SCHEMAS = [1, 2] as const;
+export type SchemaVersion = (typeof SUPPORTED_SCHEMAS)[number];
 
 export type Mode = 'avion' | 'bateau';
 export type Incoterm = 'EXW' | 'FOB';
@@ -92,7 +99,17 @@ export type RetailOffer = {
   step: number;
   min?: number;
   max?: number;
+  /**
+   * Prix propres à certains pays (publiés par la tour) : un pays n'apparaît que dans un groupe.
+   * Les autres pays gardent `price`. Appliqués par `forCountry`.
+   */
+  countryPrices?: CountryPrice[];
 };
+
+/** Prix particulier propre à un groupe de pays. */
+export type CountryPrice = { countries: string[]; price: number };
+/** Prix professionnels propres à un groupe de pays ; un incoterm `null` garde le prix global. */
+export type OfferCountryPrice = { countries: string[]; prices: Record<Incoterm, number | null> };
 
 /** Offre aux professionnels (B2B). Un produit peut en avoir zéro, une ou plusieurs. */export type WholesaleOffer = {
   /** Mode de transport de l'offre ; `null` pour une offre sans distinction avion / bateau. */
@@ -112,6 +129,8 @@ export type RetailOffer = {
    * s'applique. `null` : poids non défini (seul le nombre de conteneurs est alors affiché).
    */
   containerKg?: number | null;
+  /** Prix propres à certains pays (publiés par la tour), appliqués par `forCountry`. */
+  countryPrices?: OfferCountryPrice[];
 };
 
 /**
@@ -195,8 +214,25 @@ export type CatalogCampaign = {
   endsAt?: string;
 };
 
+/** Rayon publié par la tour : nom, ordre, image ; `pro` faux : masqué aux grossistes et importateurs. */
+export type CatalogCategory = { id: string; label: string; order: number; image: Photo | null; pro: boolean };
+/** Filtres « Tout » et « De saison » : nom et image réglés par l'équipe. */
+export type CatalogFilter = { label: string; image: Photo | null };
+export type CatalogFilters = { all: CatalogFilter; season: CatalogFilter };
+/** Moyen de paiement proposé aux particuliers. Aucun n'est encaissé par l'application. */
+export type CatalogPayment = { id: string; title: string; detail: string; icon: string; enabled: boolean };
+/** Message « Produit introuvable » réglé dans la tour ; `enabled` faux : rien n'est proposé. */
+export type ProductRequestMessage = {
+  enabled: boolean;
+  title: string;
+  body: string;
+  placeholder: string;
+  button: string;
+  thanks: string;
+};
+
 export type CatalogDocument = {
-  schema: typeof SCHEMA_VERSION;
+  schema: SchemaVersion;
   /** Date de dernière mise à jour, au format ISO. */
   updatedAt: string;
   /** `true` : données d'exemple, à remplacer par le catalogue réel. */
@@ -207,6 +243,14 @@ export type CatalogDocument = {
   campaigns: CatalogCampaign[];
   /** Livraison GP : pays et modalités réellement convenus ; vide : rien de configuré. */
   delivery: DeliveryConfig;
+  /** Rayons publiés (schema 2) ; absents : rayons de l'application (`lib/data.ts`). */
+  categories?: CatalogCategory[];
+  /** Filtres publiés (schema 2) ; absents : « Tout » et « De saison » de l'application. */
+  filters?: CatalogFilters;
+  /** Moyens de paiement publiés (schema 2) ; absents : ceux de l'application. */
+  payments?: CatalogPayment[];
+  /** Message « Produit introuvable » (schema 2) ; absent : rien n'est proposé. */
+  productRequest?: ProductRequestMessage | null;
 };
 
 /** Valeurs de départ des règles (demandées pour les grossistes et importateurs). */
@@ -257,6 +301,14 @@ function parseRules(raw: unknown): QuantityRules {
   };
 }
 
+/** Liste de codes pays ISO à deux lettres, en majuscules, sans doublon. */
+function countryList(raw: unknown): string[] {
+  const list = (Array.isArray(raw) ? raw : [])
+    .map((c) => (typeof c === 'string' ? c.trim().toUpperCase() : ''))
+    .filter((c) => /^[A-Z]{2}$/.test(c));
+  return [...new Set(list)];
+}
+
 function parseWholesale(raw: unknown): WholesaleOffer | null {
   if (!raw || typeof raw !== 'object') return null;
   const o = raw as Record<string, unknown>;
@@ -281,6 +333,17 @@ function parseWholesale(raw: unknown): WholesaleOffer | null {
   if (step) offer.stepQty = step;
   if (max) offer.maxQty = max;
   if ('containerKg' in o) offer.containerKg = positive(o.containerKg);
+  const byCountry = (Array.isArray(o.countryPrices) ? o.countryPrices : [])
+    .map((g) => {
+      const r = (g && typeof g === 'object' ? g : {}) as Record<string, unknown>;
+      const pr = (r.prices && typeof r.prices === 'object' ? r.prices : {}) as Record<string, unknown>;
+      return {
+        countries: countryList(r.countries),
+        prices: { EXW: positive(pr.EXW), FOB: positive(pr.FOB) },
+      };
+    })
+    .filter((g) => g.countries.length > 0 && (g.prices.EXW !== null || g.prices.FOB !== null));
+  if (byCountry.length > 0) offer.countryPrices = byCountry;
   return offer;
 }
 
@@ -300,6 +363,13 @@ function parseRetail(raw: unknown): RetailOffer | null {
   const max = positive(o.max);
   if (min) offer.min = min;
   if (max) offer.max = max;
+  const byCountry = (Array.isArray(o.countryPrices) ? o.countryPrices : [])
+    .map((g) => {
+      const r = (g && typeof g === 'object' ? g : {}) as Record<string, unknown>;
+      return { countries: countryList(r.countries), price: positive(r.price) };
+    })
+    .filter((g): g is CountryPrice => g.countries.length > 0 && g.price !== null);
+  if (byCountry.length > 0) offer.countryPrices = byCountry;
   return offer;
 }
 
@@ -506,14 +576,20 @@ function parseProduct(raw: unknown): CatalogProduct | null {
 export function parseCatalog(raw: unknown): CatalogDocument | null {
   if (!raw || typeof raw !== 'object') return null;
   const d = raw as Record<string, unknown>;
-  if (d.schema !== SCHEMA_VERSION || !Array.isArray(d.products)) return null;
+  if (!SUPPORTED_SCHEMAS.includes(d.schema as SchemaVersion) || !Array.isArray(d.products)) {
+    return null;
+  }
   const seen = new Set<string>();
   const products = d.products
     .map(parseProduct)
     .filter((p): p is CatalogProduct => !!p && !seen.has(p.id) && !!seen.add(p.id));
   if (products.length === 0) return null;
+  const categories = parseCategories(d.categories);
+  const filters = parseFilters(d.filters);
+  const payments = parsePayments(d.payments);
+  const productRequest = parseProductRequest(d.productRequest);
   return {
-    schema: SCHEMA_VERSION,
+    schema: d.schema as SchemaVersion,
     updatedAt: text(d.updatedAt, new Date().toISOString()),
     example: d.example === true,
     rules: parseRules(d.rules),
@@ -522,5 +598,121 @@ export function parseCatalog(raw: unknown): CatalogDocument | null {
       .map(parseCampaign)
       .filter((c): c is CatalogCampaign => !!c),
     delivery: parseDelivery(d.delivery),
+    ...(categories ? { categories } : null),
+    ...(filters ? { filters } : null),
+    ...(payments ? { payments } : null),
+    ...(productRequest !== undefined ? { productRequest } : null),
   };
+}
+
+function parsePhoto(raw: unknown): Photo | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  if (typeof o.url === 'string' && o.url) return { url: o.url };
+  if (typeof o.asset === 'string' && o.asset) return { asset: o.asset };
+  return null;
+}
+
+function parseCategories(raw: unknown): CatalogCategory[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const seen = new Set<string>();
+  const list = raw
+    .map((item, i): CatalogCategory | null => {
+      if (!item || typeof item !== 'object') return null;
+      const o = item as Record<string, unknown>;
+      const id = text(o.id);
+      const label = text(o.label);
+      if (!id || !label || seen.has(id)) return null;
+      seen.add(id);
+      return {
+        id,
+        label,
+        order: typeof o.order === 'number' && Number.isFinite(o.order) ? o.order : i,
+        image: parsePhoto(o.image),
+        pro: o.pro !== false,
+      };
+    })
+    .filter((c): c is CatalogCategory => !!c)
+    .sort((a, b) => a.order - b.order);
+  return list.length > 0 ? list : undefined;
+}
+
+function parseFilters(raw: unknown): CatalogFilters | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const o = raw as Record<string, unknown>;
+  const one = (v: unknown, fallback: string): CatalogFilter => {
+    const f = (v && typeof v === 'object' ? v : {}) as Record<string, unknown>;
+    return { label: text(f.label) || fallback, image: parsePhoto(f.image) };
+  };
+  return { all: one(o.all, 'Tout'), season: one(o.season, 'De saison') };
+}
+
+function parsePayments(raw: unknown): CatalogPayment[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const list = raw
+    .map((item): CatalogPayment | null => {
+      if (!item || typeof item !== 'object') return null;
+      const o = item as Record<string, unknown>;
+      const id = text(o.id);
+      const title = text(o.title) || text(o.label);
+      if (!id || !title) return null;
+      return {
+        id,
+        title,
+        detail: text(o.detail),
+        icon: text(o.icon, 'card-outline'),
+        enabled: o.enabled !== false,
+      };
+    })
+    .filter((p): p is CatalogPayment => !!p && p.enabled);
+  return list.length > 0 ? list : undefined;
+}
+
+function parseProductRequest(raw: unknown): ProductRequestMessage | null | undefined {
+  if (raw === undefined) return undefined;
+  if (!raw || typeof raw !== 'object') return null;
+  const o = raw as Record<string, unknown>;
+  return {
+    enabled: o.enabled === true,
+    title: text(o.title),
+    body: text(o.body),
+    placeholder: text(o.placeholder),
+    button: text(o.button),
+    thanks: text(o.thanks),
+  };
+}
+
+// ───────────── Prix par pays
+
+function groupFor<T extends { countries: string[] }>(list: T[] | undefined, country: string | null) {
+  return country ? ((list ?? []).find((g) => g.countries.includes(country)) ?? null) : null;
+}
+
+/**
+ * Le catalogue tel que le voit un client de ce pays : chaque prix particulier et professionnel
+ * est remplacé par celui de son pays s'il en a un (`countryPrices`), sinon le prix global est
+ * gardé. Pays inconnu : prix globaux. Aucun prix n'est inventé ni converti. Renvoie le même
+ * document s'il n'y a rien à changer.
+ */
+export function forCountry(doc: CatalogDocument, country: string | null): CatalogDocument {
+  const code = country ? country.toUpperCase() : null;
+  if (!code) return doc;
+  let changed = false;
+  const products = doc.products.map((p) => {
+    const own = groupFor(p.retail?.countryPrices, code);
+    const offers = p.wholesale.map((o) => {
+      const g = groupFor(o.countryPrices, code);
+      if (!g) return o;
+      return { ...o, prices: { EXW: g.prices.EXW ?? o.prices.EXW, FOB: g.prices.FOB ?? o.prices.FOB } };
+    });
+    const offersChanged = offers.some((o, i) => o !== p.wholesale[i]);
+    if (!own && !offersChanged) return p;
+    changed = true;
+    return {
+      ...p,
+      ...(own && p.retail ? { retail: { ...p.retail, price: own.price } } : null),
+      ...(offersChanged ? { wholesale: offers } : null),
+    };
+  });
+  return changed ? { ...doc, products } : doc;
 }

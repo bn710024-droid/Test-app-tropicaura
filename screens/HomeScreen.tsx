@@ -17,7 +17,8 @@ import { KeepsOwnSwipes, PAGE_SCROLL } from '../components/PageSwipe';
 import { PressableScale } from '../components/PressableScale';
 import { ProductCard } from '../components/ProductCard';
 import { TAB_BAR_SPACE } from '../components/TabBar';
-import { FILTERS, FilterId, PRODUCT_BY_ID, Photo, Product } from '../lib/data';
+import { FilterId, PRODUCT_BY_ID, Photo, Product } from '../lib/data';
+import type { Shelf } from '../lib/catalog/build';
 import {
   MONTHS,
   addedMessage,
@@ -48,7 +49,7 @@ const SEASON_PHOTO =
 
 const photo = (id: string) => ({ source: PRODUCT_BY_ID[id].image, ratio: RATIO[id] ?? 1 });
 
-const FILTER_PHOTO: Record<FilterId, { source: Photo; ratio: number }> = {
+const FILTER_PHOTO: Record<string, { source: Photo; ratio: number }> = {
   tout: { source: require('../assets/categories/tout.webp'), ratio: 1.018 },
   saison: photo(SEASON_PHOTO),
   fruits: photo('pomme'),
@@ -60,6 +61,20 @@ const FILTER_PHOTO: Record<FilterId, { source: Photo; ratio: number }> = {
   transformes: photo('baobab'),
   aromates: photo('basilic'),
 };
+
+const LEAF: Photo = require('../assets/decor/leaf.webp');
+
+/**
+ * Illustration d'un rayon : une photo publiée par l'équipe (adresse) passe en premier ; sinon
+ * l'illustration de l'application (design inchangé) ; pour un rayon créé dans la tour, le produit
+ * illustrant qu'elle a choisi.
+ */
+function shelfPhoto(f: Shelf): { source: Photo; ratio: number } {
+  if (f.image && !f.imageKey) return { source: f.image, ratio: 1 };
+  if (FILTER_PHOTO[f.id]) return FILTER_PHOTO[f.id];
+  if (f.image) return { source: f.image, ratio: f.imageKey ? (RATIO[f.imageKey] ?? 1) : 1 };
+  return { source: LEAF, ratio: 1 };
+}
 
 /** Taille d'affichage à « poids visuel » constant, quelle que soit la silhouette. */
 function photoSize(ratio: number) {
@@ -115,6 +130,7 @@ export function HomeScreen() {
     rules,
     usesModes,
     campaigns,
+    shelves,
     setTab,
   } = useStore();
   const toast = useToast();
@@ -151,7 +167,7 @@ export function HomeScreen() {
   // Seuls les rayons qui ont des produits dans cet espace sont proposés.
   const filters = useMemo(
     () =>
-      FILTERS.filter(
+      shelves.filter(
         (f) =>
           f.id === 'tout' ||
           (f.id === 'saison'
@@ -159,7 +175,7 @@ export function HomeScreen() {
             : // Pas de familles de produits dans l'espace professionnel.
               !isPro && catalog.some((p) => p.category === f.id)),
       ),
-    [catalog, isPro],
+    [catalog, isPro, shelves],
   );
 
   const list = useMemo(() => {
@@ -210,7 +226,7 @@ export function HomeScreen() {
     [addStep, byId, open, isPro, toast, setTab],
   );
 
-  const activeFilter = FILTERS.find((f) => f.id === filter)!;
+  const activeFilter = shelves.find((f) => f.id === filter) ?? shelves[0];
   const sectionTitle = searching
     ? 'Résultats'
     : filter === 'tout'
@@ -284,8 +300,8 @@ export function HomeScreen() {
             >
               <View style={[styles.filterIcon, on && styles.filterIconOn]}>
                 <Image
-                  source={FILTER_PHOTO[f.id].source}
-                  style={photoSize(FILTER_PHOTO[f.id].ratio)}
+                  source={shelfPhoto(f).source}
+                  style={photoSize(shelfPhoto(f).ratio)}
                   contentFit="contain"
                   accessible={false}
                 />

@@ -8,9 +8,25 @@ import React, {
   useState,
 } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { Space, allProducts, docCampaigns, retailSpace, wholesaleSpace } from './catalog/build';
+import { AppState } from 'react-native';
+import {
+  Shelf,
+  Space,
+  allProducts,
+  docCampaigns,
+  retailSpace,
+  shelvesOf,
+  wholesaleSpace,
+} from './catalog/build';
+import { forCountry } from './catalog/schema';
 import type { CatalogDocument, QuantityRules } from './catalog/schema';
-import { CatalogOrigin, START_CATALOG, loadCatalog } from './catalog/source';
+import {
+  CatalogOrigin,
+  START_CATALOG,
+  cachedCatalog,
+  catalogConnected,
+  watchCatalog,
+} from './catalog/source';
 import { countryName, isCountry, transportFee } from './countries';
 import type { Campaign, Product } from './data';
 import { deviceCountry } from './locate';
@@ -26,7 +42,15 @@ import {
   round2,
 } from './format';
 import { isEmail, normEmail, phoneDigits, tidyPhone } from './identity';
-import { buildRequestPayload, transmit } from './transmission';
+import {
+  TrackNotice,
+  Tracked,
+  buildOrderPayload,
+  buildRequestPayload,
+  fetchTracking,
+  transmit,
+} from './transmission';
+import { REFRESH_MS, TEAM_ENDPOINT } from './config';
 import {
   DEMO_VIDEOS,
   TeamVideo,
@@ -159,6 +183,13 @@ export type Order = {
   locationLink?: string;
   status: StatusId;
   statusAt: number;
+  /**
+   * Faux : pas encore reçue par la tour de contrôle (renvoyée à l'ouverture, toutes les 60 s et
+   * au retour au premier plan). Absent : commande passée sans tour configurée, jamais envoyée.
+   */
+  transmitted?: boolean;
+  /** Messages de suivi publiés par la tour, un par changement de statut. */
+  notifications?: TrackNotice[];
 };
 
 export type Incoterm = 'EXW' | 'FOB';
@@ -186,8 +217,12 @@ export type ProRequest = {
   statusAt: number;
   /** Date de prise en charge par l'équipe : la demande passe alors dans « Commandes ». */
   takenAt: number | null;
-  /** Vrai une fois la demande reçue par le logiciel de l'équipe (pas encore connecté). */
+  /** Vrai une fois la demande reçue par la tour de contrôle. */
   transmitted: boolean;
+  /** Étape en clair réglée par l'équipe (« Contacté », « Contrat conclu »…). */
+  stageLabel?: string;
+  /** Messages de suivi publiés par la tour. */
+  notifications?: TrackNotice[];
 };
 
 export type VideoComment = { id: string; text: string; at: number };
@@ -238,8 +273,10 @@ function spaceFor(
   incoterm: Incoterm,
   country: string | null,
 ): Space {
-  if (account?.type !== 'pro') return retailSpace(doc, country);
-  return wholesaleSpace(doc, incoterm, usesModesFor(account), country);
+  // Prix par pays (`countryPrices` publiés par la tour) : chaque client voit le prix de son pays.
+  const local = forCountry(doc, country);
+  if (account?.type !== 'pro') return retailSpace(local, country);
+  return wholesaleSpace(local, incoterm, usesModesFor(account), country);
 }
 
 /** Ramène une quantité dans les bornes de la ligne (minimum, maximum, palier). */
@@ -305,6 +342,8 @@ function sanitize(
       // Les commandes d'avant le suivi par étapes sont considérées comme terminées.
       status: isStatus(o.status) ? o.status : 'livree',
       statusAt: o.statusAt ?? o.createdAt,
+      ...(typeof o.transmitted === 'boolean' ? { transmitted: o.transmitted } : null),
+      ...(Array.isArray(o.notifications) ? { notifications: o.notifications } : null),
     }));
 
   // Un conditionnement inconnu du catalogue (ou d'un autre espace) est simplement écarté.
@@ -341,6 +380,46 @@ function sanitize(
           )
         : {},
   };
+}
+
+/**
+ * Statuts relus dans la tour : ils remplacent ceux de l'appareil (statut, date, messages). Rien
+ * ne change si la tour n'a rien de nouveau (aucune écriture inutile).
+ */
+function applyTracking(prev: Persisted, tracked: Tracked[]): Persisted {
+  const byRef = new Map(tracked.map((t) => [`${t.type}:${t.reference}`, t]));
+  const same = (a?: TrackNotice[], b?: TrackNotice[]) =>
+    (a?.length ?? 0) === (b?.length ?? 0) && JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
+  let changed = false;
+  const orders = prev.orders.map((o) => {
+    const t = byRef.get(`commande:${o.number}`);
+    if (!t) return o;
+    if (o.status === t.status && o.statusAt === t.statusAt && same(o.notifications, t.notifications) && o.transmitted !== false) {
+      return o;
+    }
+    changed = true;
+    return { ...o, status: t.status, statusAt: t.statusAt, notifications: t.notifications, transmitted: true };
+  });
+  const requests = prev.requests.map((r) => {
+    const t = byRef.get(`demande_professionnelle:${r.number}`);
+    // Une demande annulée par le client n'est pas transmise : elle reste annulée ici.
+    if (!t || r.status === 'annulee') return r;
+    if (r.status === t.status && r.statusAt === t.statusAt && r.stageLabel === t.stageLabel && same(r.notifications, t.notifications)) {
+      return r;
+    }
+    changed = true;
+    return {
+      ...r,
+      status: t.status,
+      statusAt: t.statusAt,
+      transmitted: true,
+      ...(t.stageLabel ? { stageLabel: t.stageLabel } : null),
+      notifications: t.notifications,
+      // Prise en charge par l'équipe : la demande passe dans « Commandes » dès qu'elle est confirmée.
+      takenAt: r.takenAt ?? (t.status !== 'attente' ? t.statusAt : null),
+    };
+  });
+  return changed ? { ...prev, orders, requests } : prev;
 }
 
 const matches = (a: Account, identifier: string) => {
@@ -387,6 +466,8 @@ type Store = Persisted & {
   delivery: { gp: { country: string; options: ('domicile' | 'aéroport')[] }[] };
   /** Annonces publiées par la base de contrôle (le filtrage par diffusion est à l'affichage). */
   campaigns: Campaign[];
+  /** Rayons de l'accueil : publiés par la tour (nom, ordre, image), sinon ceux de l'application. */
+  shelves: Shelf[];
   setIncoterm: (i: Incoterm) => void;
 
   toggleFavorite: (id: string) => boolean;
@@ -481,20 +562,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const isPro = account?.type === 'pro';
   const data = box?.data ?? EMPTY;
 
-  // Catalogue : l'exemple embarqué, remplacé par celui du logiciel de contrôle le jour où une
-  // adresse sera configurée (voir lib/catalog/source.ts). Rien n'est connecté aujourd'hui.
+  // Catalogue : celui de la tour de contrôle quand elle est configurée (relu à l'ouverture,
+  // toutes les 60 s et au retour au premier plan, voir lib/catalog/source.ts), sinon l'exemple
+  // embarqué.
   const [cat, setCat] = useState(START_CATALOG);
   const catRef = useRef(cat);
   catRef.current = cat;
-  useEffect(() => {
-    let alive = true;
-    loadCatalog().then((next) => {
-      if (alive && next) setCat(next);
-    });
-    return () => {
-      alive = false;
-    };
-  }, []);
+  useEffect(() => watchCatalog(setCat), []);
 
   const accountType = account?.type ?? null;
   const activity = account?.activity ?? null;
@@ -520,6 +594,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const byId = space.byId;
   const baseById = useMemo(() => allProducts(cat.doc), [cat.doc]);
   const campaigns = useMemo(() => docCampaigns(cat.doc), [cat.doc]);
+  const shelves = useMemo(() => shelvesOf(cat.doc), [cat.doc]);
 
   // Valeurs courantes, pour les actions qui ne doivent pas être recréées à chaque rendu.
   const live = useRef({ auth, data, byId, account, isPro });
@@ -548,9 +623,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         let loaded: { id: string; data: Persisted } | null = null;
         if (session) {
           const raw = await AsyncStorage.getItem(dataKey(session.id));
+          // Tour configurée : le panier enregistré se relit contre la dernière copie du catalogue
+          // publié (un produit ajouté par la tour ne doit pas disparaître du panier au démarrage).
+          const kept = catalogConnected() ? await cachedCatalog() : null;
+          if (kept && catRef.current.origin === 'exemple') setCat(kept);
           loaded = {
             id: session.id,
-            data: sanitize(raw ? JSON.parse(raw) : null, session, catRef.current.doc),
+            data: sanitize(raw ? JSON.parse(raw) : null, session, (kept ?? catRef.current).doc),
           };
         }
         if (!alive) return;
@@ -822,6 +901,25 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   };
 
   // ───── Commande d'un particulier
+  /** Envoie une commande à la tour ; reçue (ou déjà reçue), elle sort de la file d'attente. */
+  const sendOrder = useCallback(
+    (order: Order) => {
+      const products = live.current.byId;
+      const payload = buildOrderPayload(order, live.current.account ?? undefined, (id) => {
+        const p = products[id];
+        return p ? { unit: p.unit === 'kg' ? 'kg' : 'unit', noun: p.noun } : undefined;
+      });
+      transmit(payload).then((result) => {
+        if (result !== 'sent') return; // réseau ou tour indisponible : renvoyée plus tard
+        setData((d) => ({
+          ...d,
+          orders: d.orders.map((o) => (o.id === order.id ? { ...o, transmitted: true } : o)),
+        }));
+      });
+    },
+    [setData],
+  );
+
   const placeOrder = useCallback<Store['placeOrder']>(
     ({ transport, payment, note, contact, location, forSelf, locationLink }) => {
       const d = live.current.data;
@@ -858,11 +956,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         locationLink: locationLink ?? '',
         status: 'attente',
         statusAt: now,
+        // Tour configurée : la commande part tout de suite, et sera renvoyée tant qu'elle n'est
+        // pas reçue (file locale sur l'appareil).
+        ...(TEAM_ENDPOINT ? { transmitted: false } : null),
       };
       setData((prev) => ({ ...prev, cart: {}, contact, orders: [order, ...prev.orders] }));
+      if (TEAM_ENDPOINT) sendOrder(order);
       return order;
     },
-    [setData],
+    [setData, sendOrder],
   );
 
   // ───── Demande d'un professionnel
@@ -912,6 +1014,31 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!boxId || !live.current.isPro) return;
     live.current.data.requests.filter((r) => !r.transmitted).forEach(sendToTeam);
   }, [boxId, sendToTeam]);
+
+  // Tour de contrôle : à l'ouverture, toutes les 60 s et au retour au premier plan, on renvoie
+  // ce qui n'est pas parti, puis on relit les statuts réglés par l'équipe.
+  useEffect(() => {
+    if (!boxId || !TEAM_ENDPOINT) return;
+    let alive = true;
+    const sync = async () => {
+      const { data: d, isPro: pro, account: acc } = live.current;
+      d.orders.filter((o) => o.transmitted === false).forEach(sendOrder);
+      if (pro) d.requests.filter((r) => !r.transmitted).forEach(sendToTeam);
+      if (!acc) return;
+      const tracked = await fetchTracking(acc.id);
+      if (alive && tracked && tracked.length > 0) setData((prev) => applyTracking(prev, tracked));
+    };
+    sync();
+    const timer = setInterval(sync, REFRESH_MS);
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') sync();
+    });
+    return () => {
+      alive = false;
+      clearInterval(timer);
+      sub.remove();
+    };
+  }, [boxId, sendOrder, sendToTeam, setData]);
 
   const cancelRequest = useCallback(
     (id: string) => {
@@ -1053,6 +1180,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       clientCountry,
       delivery: cat.doc.delivery,
       campaigns,
+      shelves,
       setIncoterm,
       toggleFavorite,
       formats: data.formats,
@@ -1096,6 +1224,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       cat,
       clientCountry,
       campaigns,
+      shelves,
       setIncoterm,
       toggleFavorite,
       data.formats,

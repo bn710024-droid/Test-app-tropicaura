@@ -176,6 +176,7 @@ export function ProductScreen() {
     setTab,
     formats,
     setFormat,
+    shelves,
   } = useStore();
   const first = byId[params.id] ?? catalog[0];
   // L'anneau parcouru en glissant, en boucle, depuis le produit ouvert : tout le catalogue de
@@ -716,7 +717,10 @@ export function ProductScreen() {
                   )
                 ) : (
                   <View style={styles.chip}>
-                    <Text style={styles.chipText}>{CATEGORY_LABEL[p.category]}</Text>
+                    <Text style={styles.chipText}>
+                      {shelves.find((s) => s.id === p.category)?.label ??
+                        CATEGORY_LABEL[p.category]}
+                    </Text>
                   </View>
                 )}
               </Animated.View>
