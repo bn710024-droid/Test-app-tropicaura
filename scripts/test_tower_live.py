@@ -241,6 +241,44 @@ with sync_playwright() as pw:
               f'({delay and round(delay)} s)')
         api('DELETE', '/api/orders', {'id': o['id']})
 
+    # ── File locale : commande passée pendant une coupure → renvoyée dès que la tour répond
+    cut = {'on': True}
+    def offline(route):
+        if cut['on'] and route.request.method == 'POST':
+            route.abort()
+        else:
+            route.continue_()
+    page.route('**/api/orders*', offline)
+    page.get_by_role('tab', name=re.compile('Marché')).first.click()
+    page.wait_for_timeout(600)
+    page.get_by_label('Rechercher un fruit ou un légume').fill('poire')
+    page.wait_for_timeout(500)
+    page.get_by_role('button', name=re.compile('^Poire')).first.click()
+    page.get_by_text('Dans le même rayon').wait_for(timeout=15000)
+    page.get_by_role('button', name=re.compile('^Ajouter .* au panier')).click()
+    page.wait_for_timeout(500)
+    page.get_by_role('button', name='Ouvrir le panier').first.click()
+    page.get_by_role('button', name=re.compile('^Commander')).click()
+    page.get_by_role('heading', name='Votre commande').wait_for(timeout=15000)
+    page.get_by_role('radio', name='Valider pour moi').click()
+    page.wait_for_timeout(400)
+    if page.get_by_role('button', name='Partager ma position pour le livreur').count():
+        page.get_by_role('button', name='Partager ma position pour le livreur').click()
+        page.wait_for_timeout(2500)
+    page.get_by_role('button', name=re.compile('^Payer et confirmer')).click()
+    page.wait_for_timeout(3000)
+    count_poire = lambda: len([x for x in api('GET', '/api/orders')['orders']
+                               if x['customer'].get('name') == 'Awa Diop Tour' and any('Poire' in l['name'] for l in x['lines'])])
+    check('coupure : commande gardée sur l’appareil (rien reçu par la tour)', count_poire() == 0)
+    cut['on'] = False
+    delay = wait_for(page, lambda: count_poire() == 1, 75)
+    check('coupure : commande renvoyée automatiquement au retour du réseau (≤ 60 s)', delay is not None and delay <= 62,
+          f'({delay and round(delay)} s)')
+    page.unroute('**/api/orders*')
+    for x in api('GET', '/api/orders')['orders']:
+        if x['customer'].get('name') == 'Awa Diop Tour':
+            api('DELETE', '/api/orders', {'id': x['id']})
+
     # ── Livraison GP : pays desservis réglés dans la tour → proposés à la validation (adresse France)
     logi = api('GET', '/api/orders')['logistics']
     api('PUT', '/api/orders', {'logistics': dict(logi, gpCountries=['FR'])})
