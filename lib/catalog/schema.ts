@@ -256,6 +256,8 @@ export type CatalogDocument = {
   payments?: CatalogPayment[];
   /** Message « Produit introuvable » (schema 2) ; absent : rien n'est proposé. */
   productRequest?: ProductRequestMessage | null;
+  /** Forfaits de transport par zone, en euros (schema 2) ; absents : barème de l'application. */
+  transport?: Readonly<Record<string, number>>;
 };
 
 /** Valeurs de départ des règles (demandées pour les grossistes et importateurs). */
@@ -599,6 +601,7 @@ export function parseCatalog(raw: unknown): CatalogDocument | null {
   const filters = parseFilters(d.filters);
   const payments = parsePayments(d.payments);
   const productRequest = parseProductRequest(d.productRequest);
+  const transport = parseTransport(d.transport);
   return {
     schema: d.schema as SchemaVersion,
     updatedAt: text(d.updatedAt, new Date().toISOString()),
@@ -613,7 +616,30 @@ export function parseCatalog(raw: unknown): CatalogDocument | null {
     ...(filters ? { filters } : null),
     ...(payments ? { payments } : null),
     ...(productRequest !== undefined ? { productRequest } : null),
+    ...(transport ? { transport } : null),
   };
+}
+
+/** Forfaits de transport : en euros seulement, un montant de 0 à 10 000 € par zone. */
+function parseTransport(raw: unknown): Readonly<Record<string, number>> | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const o = raw as Record<string, unknown>;
+  if (o.currency !== 'EUR' || !Array.isArray(o.zones)) return undefined;
+  const fees = Object.fromEntries(
+    o.zones
+      .map((z) => (z && typeof z === 'object' ? (z as Record<string, unknown>) : null))
+      .filter(
+        (z): z is { id: string; fee: number } =>
+          !!z &&
+          typeof z.id === 'string' &&
+          typeof z.fee === 'number' &&
+          Number.isFinite(z.fee) &&
+          z.fee >= 0 &&
+          z.fee <= 10000,
+      )
+      .map((z) => [z.id, Math.round(z.fee * 100) / 100]),
+  );
+  return Object.keys(fees).length > 0 ? fees : undefined;
 }
 
 function parsePhoto(raw: unknown): Photo | null {

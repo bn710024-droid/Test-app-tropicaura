@@ -85,6 +85,7 @@ export function CheckoutScreen() {
     setTab,
     delivery,
     payments,
+    transportFees,
   } = useStore();
   const { top, bottom } = useFrame();
   const [transport, setTransport] = useState(true);
@@ -125,7 +126,7 @@ export function CheckoutScreen() {
   const contactY = useRef(0);
 
   // Le transport est forfaitaire, selon le pays de destination. Sans transport, rien n'est ajouté.
-  const fee = address ? transportFee(address.country) : null;
+  const fee = address ? transportFee(address.country, transportFees) : null;
   const transportCost = transport ? (fee ?? 0) : 0;
   const total = round2(subtotal + transportCost);
   const destination = address ? countryName(address.country) : '';
@@ -141,7 +142,7 @@ export function CheckoutScreen() {
   const senegal = address?.country === 'SN';
   // Europe : GP — seules les modalités réellement configurées sont présentées.
   const gp = address ? delivery.gp.find((g) => g.country === address.country) : undefined;
-  const europe = address ? transportZone(address.country).id === 'eu' : false;
+  const europe = address ? transportZone(address.country, transportFees).id === 'eu' : false;
 
   const sharePosition = async () => {
     setLocating(true);

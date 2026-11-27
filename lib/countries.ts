@@ -255,7 +255,8 @@ export const isCountry = (code: string | null | undefined): code is string =>
 export const countryName = (code: string) => NAME[code] ?? code;
 
 // ───────────── Transport au départ du Sénégal
-// Barème d'exemple, forfaitaire par zone de destination : à remplacer par vos tarifs réels.
+// Forfait par zone de destination, en euros. Réglé dans la tour (Réglages › Transport) et publié
+// dans le catalogue ; tant qu'il ne l'est pas, le barème d'exemple ci-dessous s'applique.
 
 export type TransportZone = { id: string; label: string; fee: number };
 
@@ -277,7 +278,10 @@ const IN_EUROPE = set(
 );
 const IN_NORTH_AMERICA = set('US CA MX');
 
-export function transportZone(country: string): TransportZone {
+/** Forfaits publiés par la tour, par zone (`{ sn: 6, … }`, en euros). */
+export type TransportFees = Readonly<Record<string, number>>;
+
+function zoneOf(country: string): TransportZone {
   if (country === 'SN') return SENEGAL;
   if (IN_WEST_AFRICA.has(country)) return WEST_AFRICA;
   if (IN_AFRICA.has(country)) return AFRICA;
@@ -286,4 +290,11 @@ export function transportZone(country: string): TransportZone {
   return WORLD;
 }
 
-export const transportFee = (country: string) => transportZone(country).fee;
+export function transportZone(country: string, fees?: TransportFees | null): TransportZone {
+  const zone = zoneOf(country);
+  const fee = fees?.[zone.id];
+  return typeof fee === 'number' ? { ...zone, fee } : zone;
+}
+
+export const transportFee = (country: string, fees?: TransportFees | null) =>
+  transportZone(country, fees).fee;

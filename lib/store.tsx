@@ -27,7 +27,7 @@ import {
   catalogConnected,
   watchCatalog,
 } from './catalog/source';
-import { countryName, isCountry, transportFee } from './countries';
+import { countryName, isCountry, transportFee, type TransportFees } from './countries';
 import { PAYMENTS } from './data';
 import type { Campaign, Product } from './data';
 import { coordsIfAllowed, deviceCountry } from './locate';
@@ -437,6 +437,18 @@ function applyTracking(prev: Persisted, tracked: Tracked[]): Persisted {
   return changed ? { ...prev, orders, requests } : prev;
 }
 
+/**
+ * Identifiant d'un nouveau compte : l'heure de création (tri) suivie de 128 bits aléatoires. Il
+ * donne accès au suivi des commandes (`?compte=` dans la tour) : il ne doit pas se deviner.
+ */
+function newAccountId(now: number) {
+  const bytes = new Uint8Array(16);
+  const random = (globalThis as { crypto?: { getRandomValues?: (a: Uint8Array) => Uint8Array } }).crypto;
+  if (random?.getRandomValues) random.getRandomValues(bytes);
+  else for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  return `c${now.toString(36)}${Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('')}`;
+}
+
 const matches = (a: Account, identifier: string) => {
   const id = identifier.trim();
   if (!id) return false;
@@ -492,6 +504,8 @@ type Store = Persisted & {
   requestProduct: (product: string) => Promise<TransmitResult>;
   /** Moyens de paiement : publiés par la tour, sinon ceux de l'application. Aucun n'est encaissé. */
   payments: readonly { id: string; title: string; detail: string; icon: string }[];
+  /** Forfaits de transport publiés par la tour ; `null` : barème de l'application. */
+  transportFees: TransportFees | null;
   setIncoterm: (i: Incoterm) => void;
 
   toggleFavorite: (id: string) => boolean;
@@ -663,14 +677,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const campaigns = useMemo(() => docCampaigns(cat.doc), [cat.doc]);
   const shelves = useMemo(() => shelvesOf(cat.doc), [cat.doc]);
   const payments = useMemo(() => cat.doc.payments ?? PAYMENTS, [cat.doc]);
+  const transportFees = useMemo(() => cat.doc.transport ?? null, [cat.doc]);
   const productRequest = useMemo(
     () => (TEAM_ENDPOINT && cat.doc.productRequest?.enabled ? cat.doc.productRequest : null),
     [cat.doc],
   );
 
   // Valeurs courantes, pour les actions qui ne doivent pas être recréées à chaque rendu.
-  const live = useRef({ auth, data, byId, account, isPro });
-  live.current = { auth, data, byId, account, isPro };
+  const live = useRef({ auth, data, byId, account, isPro, transportFees });
+  live.current = { auth, data, byId, account, isPro, transportFees };
 
   const setData = useCallback((fn: (d: Persisted) => Persisted) => {
     setBox((b) => (b ? { ...b, data: fn(b.data) } : b));
@@ -752,7 +767,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       name: input.name.trim(),
       company: input.company.trim(),
       country: isCountry(input.country) ? input.country : '',
-      id: `c${now.toString(36)}`,
+      id: newAccountId(now),
       createdAt: now,
     };
     // Le premier compte reprend ce qui avait été enregistré avant l'arrivée des comptes.
@@ -1012,7 +1027,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       ];
       const currency = currencies.length === 1 ? currencies[0] : 'EUR';
       const adr = d.addresses.find((a) => a.id === d.addressId) ?? d.addresses[0];
-      const transportCost = transport && adr ? transportFee(adr.country) : 0;
+      const transportCost =
+        transport && adr ? transportFee(adr.country, live.current.transportFees) : 0;
       const now = Date.now();
       const order: Order = {
         id: now.toString(36),
@@ -1305,6 +1321,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       campaigns,
       shelves,
       payments,
+      transportFees,
       productRequest,
       requestProduct,
       setIncoterm,
@@ -1353,6 +1370,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       campaigns,
       shelves,
       payments,
+      transportFees,
       productRequest,
       requestProduct,
       setIncoterm,
