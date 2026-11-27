@@ -61,6 +61,8 @@ with sync_playwright() as pw:
     scan(page, 'app-accueil')
     open_product(page, 'baobab', '^Poudre de Baobab')
     scan(page, 'app-fiche-baobab', wait=1500)
+    fmt = [x for x in page.eval_on_selector_all('img', 'els => els.map(e => e.currentSrc || e.src)') if '/formats/' in x]
+    check('app : photos des emballages affichées (sachet, pot du baobab)', len(fmt) >= 2, fmt[:2])
     check('app : 0 image en 404 pendant tout le parcours', not bad, bad[:3])
     ctx.close()
     browser.close()

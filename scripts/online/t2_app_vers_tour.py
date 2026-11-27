@@ -97,7 +97,13 @@ def run():
             # ── Moyens de paiement : « Virement » désactivé dans la tour → absent de l'application
             r = api('PUT', '/api/settings', {'key': 'payments', 'value': {'orange_money': True, 'wave': True, 'virement': False, 'carte': True}})
             check('tour : moyen de paiement désactivé (réglage payments)', (r or {}).get('value', {}).get('virement') is False, r)
-            pays = [x['id'] for x in api('GET', '/api/catalog?v=2')['payments']]
+            # Le catalogue est servi avec un cache de 5 s : on relit jusqu'à 20 s.
+            pays = []
+            for _ in range(10):
+                pays = [x['id'] for x in api('GET', '/api/catalog?v=2')['payments']]
+                if pays == ['orange_money', 'wave', 'carte']:
+                    break
+                time.sleep(2)
             check('tour : ?v=2 ne publie que les moyens activés', pays == ['orange_money', 'wave', 'carte'], pays)
             r = api('PUT', '/api/settings', {'key': 'payments', 'value': {'orange_money': False, 'wave': False, 'virement': False, 'carte': False}})
             check('tour : impossible de tout désactiver', (r or {}).get('_status') == 400, r)
@@ -242,6 +248,9 @@ def run():
             d = wait_for(A, lambda: (s := stats()).get('views', 0) >= 1 and s.get('likes', 0) >= 1 and s.get('comments', 0) >= 1, 40, 2000)
             check('tour : vue + J’aime + commentaire reçus', d is not None, stats())
             A.screenshot(path=str(SHOTS / 'online-t2-video.png'))
+            # La fenêtre des commentaires de la vidéo est encore ouverte : on la ferme.
+            A.keyboard.press('Escape')
+            A.wait_for_timeout(800)
 
             # ── Publication photo : 2 photos, description, vue, J'aime, commentaire
             pics = [upload_publication_file('photo', png((200, 120, 40), 160), 'image/png'),
