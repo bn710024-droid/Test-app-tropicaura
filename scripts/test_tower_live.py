@@ -134,9 +134,44 @@ with sync_playwright() as pw:
     api('PUT', '/api/products', {'id': 'pomme', 'packagings': old_packs})
     check('tour remise en état', product('pomme')['retail']['price'] == old_price and product('poire')['available'])
 
-    # ── Scénario « commande » : app → tour → statut changé dans la tour → app
+    # ── Annonce publiée dans la tour → bandeau d'accueil de l'application
     page.get_by_role('button', name='Retour').first.click()
     page.wait_for_timeout(600)
+    ad = api('POST', '/api/publications', {'kind': 'annonce', 'published': True,
+                                            'data': {'product_id': 'mangue', 'accent': 'du Sénégal', 'body': 'Annonce publiée par la tour'}})
+    ad_id = (ad or {}).get('id')
+    check('tour : annonce publiée', bool(ad_id), json.dumps(ad)[:160])
+    delay = wait_for(page, lambda: 'Annonce publiée par la tour' in home(), 75)
+    check('app : bandeau d’annonce affiché en ≤ 60 s', delay is not None and delay <= 62, f'({delay and round(delay)} s)')
+    page.screenshot(path=str(SHOTS / 'live-6-annonce.png'))
+    if ad_id:
+        api('DELETE', '/api/publications', {'id': ad_id})
+        delay = wait_for(page, lambda: 'Annonce publiée par la tour' not in home(), 75)
+        check('app : bandeau retiré après suppression dans la tour', delay is not None)
+
+    # ── Produit introuvable : recherche vide dans tout le catalogue → demande envoyée à la tour
+    page.get_by_label('Rechercher un fruit ou un légume').fill('durian')
+    page.wait_for_timeout(800)
+    msg = api('GET', '/api/catalog?v=2')['productRequest']
+    check('app : message « produit introuvable » de la tour affiché', page.get_by_text(msg['title']).count() >= 1)
+    page.screenshot(path=str(SHOTS / 'live-7-introuvable.png'))
+    page.get_by_role('button', name=msg['button']).click()
+    page.wait_for_timeout(2500)
+    check('app : confirmation affichée après envoi', page.get_by_text(msg['thanks'][:30]).count() >= 1)
+    reqs = api('GET', '/api/orders?vue=introuvables')['requests']
+    mine_req = [r for r in reqs if r.get('product', '').lower() == 'durian']
+    check('tour : demande « durian » reçue dans Introuvables', len(mine_req) >= 1)
+    for r in mine_req:
+        api('DELETE', '/api/orders', {'requestId': r['id']})
+    page.get_by_label('Rechercher un fruit ou un légume').fill('')
+    page.wait_for_timeout(500)
+
+    # ── Statistiques des publications : l'état complet est accepté par la tour
+    r = api('POST', '/api/publications?public=reactions', {'account': {'id': 'test-compte-1', 'name': '', 'type': 'particulier'},
+                                                            'views': [], 'likes': [], 'comments': []})
+    check('tour : état des réactions accepté', bool(r and r.get('ok')))
+
+    # ── Scénario « commande » : app → tour → statut changé dans la tour → app
     page.get_by_label('Rechercher un fruit ou un légume').fill('pomme')
     page.wait_for_timeout(500)
     page.get_by_role('button', name=re.compile('^Pomme Gala')).first.click()

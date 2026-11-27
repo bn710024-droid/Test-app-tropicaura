@@ -1,4 +1,4 @@
-import { VIDEOS_ENDPOINT } from './config';
+import { CONTROL_TOWER, VIDEOS_ENDPOINT } from './config';
 
 /**
  * Vidéos publiées par l'équipe, visibles dans Favoris › Découvrir.
@@ -129,6 +129,33 @@ export async function fetchTeamVideos(): Promise<TeamVideo[] | null> {
 }
 
 type Sent = 'sent' | 'not_connected' | 'failed';
+
+/** État complet d'un compte, tel que la tour l'attend (`<tour>/api/publications?public=reactions`). */
+export type ReactionsState = {
+  account: { id: string; name: string; type: 'particulier' | 'pro' };
+  views: string[];
+  likes: string[];
+  comments: { id: string; publicationId: string; text: string; at: number }[];
+};
+
+/**
+ * Envoie l'état complet des vues, J'aime et commentaires du compte. Renvoyer le même état ne
+ * change rien côté tour : on peut réessayer sans risque. Seules les publications de la tour
+ * sont comptées (les vidéos de démonstration sont ignorées par la tour).
+ */
+export async function sendReactions(state: ReactionsState): Promise<Sent> {
+  if (!CONTROL_TOWER) return 'not_connected';
+  try {
+    const response = await fetch(`${CONTROL_TOWER}/api/publications?public=reactions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(state),
+    });
+    return response.ok ? 'sent' : 'failed';
+  } catch {
+    return 'failed';
+  }
+}
 
 /** Envoi d'un événement à l'outil de l'équipe. Sans adresse configurée, rien ne part. */
 async function post(path: string, body: Record<string, unknown>): Promise<Sent> {

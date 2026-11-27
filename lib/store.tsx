@@ -19,7 +19,7 @@ import {
   wholesaleSpace,
 } from './catalog/build';
 import { forCountry } from './catalog/schema';
-import type { CatalogDocument, QuantityRules } from './catalog/schema';
+import type { CatalogDocument, ProductRequestMessage, QuantityRules } from './catalog/schema';
 import {
   CatalogOrigin,
   START_CATALOG,
@@ -28,6 +28,7 @@ import {
   watchCatalog,
 } from './catalog/source';
 import { countryName, isCountry, transportFee } from './countries';
+import { PAYMENTS } from './data';
 import type { Campaign, Product } from './data';
 import { deviceCountry } from './locate';
 import {
@@ -45,6 +46,8 @@ import { isEmail, normEmail, phoneDigits, tidyPhone } from './identity';
 import {
   TrackNotice,
   Tracked,
+  TransmitResult,
+  buildMissingPayload,
   buildOrderPayload,
   buildRequestPayload,
   fetchTracking,
@@ -58,6 +61,7 @@ import {
   reportComment,
   reportLike,
   reportView,
+  sendReactions,
   videosFor,
 } from './videos';
 
@@ -468,6 +472,15 @@ type Store = Persisted & {
   campaigns: Campaign[];
   /** Rayons de l'accueil : publiés par la tour (nom, ordre, image), sinon ceux de l'application. */
   shelves: Shelf[];
+  /**
+   * Message « Produit introuvable » réglé dans la tour ; `null` : rien n'est proposé (tour non
+   * configurée, message absent ou désactivé par l'équipe).
+   */
+  productRequest: ProductRequestMessage | null;
+  /** Envoie à la tour le produit que le client n'a pas trouvé. */
+  requestProduct: (product: string) => Promise<TransmitResult>;
+  /** Moyens de paiement : publiés par la tour, sinon ceux de l'application. Aucun n'est encaissé. */
+  payments: readonly { id: string; title: string; detail: string; icon: string }[];
   setIncoterm: (i: Incoterm) => void;
 
   toggleFavorite: (id: string) => boolean;
@@ -580,6 +593,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const fromAccount = account && isCountry(account.country) ? account.country : null;
     return adr?.country ?? fromAccount ?? deviceCountry();
   }, [data.addresses, data.addressId, account]);
+  const clientCountryRef = useRef(clientCountry);
+  clientCountryRef.current = clientCountry;
   const space = useMemo(
     () =>
       spaceFor(
@@ -595,6 +610,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const baseById = useMemo(() => allProducts(cat.doc), [cat.doc]);
   const campaigns = useMemo(() => docCampaigns(cat.doc), [cat.doc]);
   const shelves = useMemo(() => shelvesOf(cat.doc), [cat.doc]);
+  const payments = useMemo(() => cat.doc.payments ?? PAYMENTS, [cat.doc]);
+  const productRequest = useMemo(
+    () => (TEAM_ENDPOINT && cat.doc.productRequest?.enabled ? cat.doc.productRequest : null),
+    [cat.doc],
+  );
 
   // Valeurs courantes, pour les actions qui ne doivent pas être recréées à chaque rendu.
   const live = useRef({ auth, data, byId, account, isPro });
@@ -920,6 +940,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [setData],
   );
 
+  const requestProduct = useCallback<Store['requestProduct']>(
+    (product) =>
+      transmit(
+        buildMissingPayload(product, live.current.account ?? undefined, clientCountryRef.current),
+      ),
+    [],
+  );
+
   const placeOrder = useCallback<Store['placeOrder']>(
     ({ transport, payment, note, contact, location, forSelf, locationLink }) => {
       const d = live.current.data;
@@ -1015,6 +1043,32 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     live.current.data.requests.filter((r) => !r.transmitted).forEach(sendToTeam);
   }, [boxId, sendToTeam]);
 
+  // Vues, J'aime et commentaires : l'état complet part vers la tour 2 s après chaque geste, et
+  // repart à la relecture suivante s'il n'est pas passé. Le nom du compte n'est pas envoyé : la
+  // fenêtre des commentaires ne prévient pas encore le client qu'il accompagnerait ses gestes.
+  const reactionsDirty = useRef(false);
+  const pushReactions = useCallback(() => {
+    const { data: d, account: acc } = live.current;
+    if (!acc) return;
+    const comments = Object.entries(d.comments).flatMap(([publicationId, list]) =>
+      list.map((c) => ({ id: c.id, publicationId, text: c.text, at: c.at })),
+    );
+    sendReactions({
+      account: { id: acc.id, name: '', type: acc.type === 'pro' ? 'pro' : 'particulier' },
+      views: d.watched,
+      likes: d.likes,
+      comments,
+    }).then((r) => {
+      reactionsDirty.current = r === 'failed';
+    });
+  }, []);
+  const reactionsKey = box ? JSON.stringify([data.watched, data.likes, data.comments]) : '';
+  useEffect(() => {
+    if (!reactionsKey || !TEAM_ENDPOINT) return;
+    const timer = setTimeout(pushReactions, 2000);
+    return () => clearTimeout(timer);
+  }, [reactionsKey, pushReactions]);
+
   // Tour de contrôle : à l'ouverture, toutes les 60 s et au retour au premier plan, on renvoie
   // ce qui n'est pas parti, puis on relit les statuts réglés par l'équipe.
   useEffect(() => {
@@ -1024,6 +1078,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const { data: d, isPro: pro, account: acc } = live.current;
       d.orders.filter((o) => o.transmitted === false).forEach(sendOrder);
       if (pro) d.requests.filter((r) => !r.transmitted).forEach(sendToTeam);
+      if (reactionsDirty.current) pushReactions();
       if (!acc) return;
       const tracked = await fetchTracking(acc.id);
       if (alive && tracked && tracked.length > 0) setData((prev) => applyTracking(prev, tracked));
@@ -1038,7 +1093,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       clearInterval(timer);
       sub.remove();
     };
-  }, [boxId, sendOrder, sendToTeam, setData]);
+  }, [boxId, sendOrder, sendToTeam, setData, pushReactions]);
 
   const cancelRequest = useCallback(
     (id: string) => {
@@ -1181,6 +1236,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       delivery: cat.doc.delivery,
       campaigns,
       shelves,
+      payments,
+      productRequest,
+      requestProduct,
       setIncoterm,
       toggleFavorite,
       formats: data.formats,
@@ -1225,6 +1283,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       clientCountry,
       campaigns,
       shelves,
+      payments,
+      productRequest,
+      requestProduct,
       setIncoterm,
       toggleFavorite,
       data.formats,

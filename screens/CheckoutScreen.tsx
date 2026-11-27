@@ -11,7 +11,7 @@ import { Backdrop } from '../components/Backdrop';
 import { PrimaryButton, RoundButton } from '../components/Buttons';
 import { EmptyState } from '../components/EmptyState';
 import { countryName, transportFee, transportZone } from '../lib/countries';
-import { PAYMENTS } from '../lib/data';
+import { TEAM_ENDPOINT } from '../lib/config';
 import { euro, formatAddress, money, round2 } from '../lib/format';
 import { isPhone } from '../lib/identity';
 import { LocateError, locateCoords } from '../lib/locate';
@@ -74,8 +74,18 @@ function Option({
 
 export function CheckoutScreen() {
   const nav = useNavigation<Nav>();
-  const { account, cartLines, subtotal, totalsByCurrency, address, contact, placeOrder, setTab, delivery } =
-    useStore();
+  const {
+    account,
+    cartLines,
+    subtotal,
+    totalsByCurrency,
+    address,
+    contact,
+    placeOrder,
+    setTab,
+    delivery,
+    payments,
+  } = useStore();
   const { top, bottom } = useFrame();
   const [transport, setTransport] = useState(true);
   // Sénégal : position partagée POUR LE LIVREUR, uniquement après accord explicite.
@@ -85,7 +95,7 @@ export function CheckoutScreen() {
   const [coordsNote, setCoordsNote] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
   const [locAsked, setLocAsked] = useState(false);
-  const [paymentId, setPaymentId] = useState<string>(PAYMENTS[0].id);
+  const [paymentId, setPaymentId] = useState<string>(payments[0].id);
   const [email, setEmail] = useState(contact.email || account?.email || '');
   const [phone, setPhone] = useState(contact.phone || account?.phone || '');
   const [note, setNote] = useState('');
@@ -196,7 +206,7 @@ export function CheckoutScreen() {
       warn();
       return;
     }
-    const payment = PAYMENTS.find((p) => p.id === paymentId) ?? PAYMENTS[0];
+    const payment = payments.find((p) => p.id === paymentId) ?? payments[0];
     sending.current = true;
     setBusy(true);
     // Aucun prestataire de paiement n'est branché : cette courte attente tient lieu de réponse.
@@ -512,15 +522,19 @@ export function CheckoutScreen() {
             Paiement
           </Text>
           <Text style={styles.sectionHint}>
-            Vous réglez maintenant, à la confirmation de la commande.
+            {TEAM_ENDPOINT
+              ? 'Choisissez votre moyen de paiement : notre équipe confirme la commande dès réception.'
+              : 'Vous réglez maintenant, à la confirmation de la commande.'}
           </Text>
           <View accessibilityRole="radiogroup" style={[styles.group, { marginTop: 12 }]}>
-            {PAYMENTS.map((p) => (
+            {payments.map((p) => (
               <Option
                 key={p.id}
                 title={p.title}
                 detail={p.detail}
-                icon={p.icon}
+                icon={
+                  (p.icon in Ionicons.glyphMap ? p.icon : 'card-outline') as keyof typeof Ionicons.glyphMap
+                }
                 selected={paymentId === p.id}
                 onPress={() => setPaymentId(p.id)}
               />
@@ -621,8 +635,9 @@ export function CheckoutScreen() {
           <View style={styles.demo}>
             <Ionicons name="information-circle-outline" size={17} color={C.textDim} />
             <Text style={styles.demoText}>
-              Application de démonstration : aucun paiement n’est prélevé, aucun message n’est
-              réellement envoyé et aucune commande n’est transmise.
+              {TEAM_ENDPOINT
+                ? 'Aucun paiement n’est prélevé par l’application : votre commande est transmise à notre équipe, qui la confirme dès réception de votre paiement.'
+                : 'Application de démonstration : aucun paiement n’est prélevé, aucun message n’est réellement envoyé et aucune commande n’est transmise.'}
             </Text>
           </View>
         </ScrollView>

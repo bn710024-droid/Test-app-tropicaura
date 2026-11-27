@@ -47,9 +47,13 @@ type Slide = {
  * Une diapositive par campagne DIFFUSÉE : les annonces éteintes (`enabled: false`) ou hors
  * de leur période (`startsAt`/`endsAt`) ne sont jamais construites ni affichées.
  */
-export function buildSlides(campaigns: Campaign[] = CAMPAIGNS): Slide[] {
-  return campaigns.filter((c) => campaignActive(c) && PRODUCT_BY_ID[c.id]).map((c) => {
-    const product = PRODUCT_BY_ID[c.id];
+export function buildSlides(
+  campaigns: Campaign[] = CAMPAIGNS,
+  // Produits du catalogue affiché (publié par la tour) ; par défaut, ceux de l'application.
+  products: Record<string, Product> = PRODUCT_BY_ID,
+): Slide[] {
+  return campaigns.filter((c) => campaignActive(c) && products[c.id]).map((c) => {
+    const product = products[c.id];
     const article = /^[aeiouyéèêh]/i.test(product.name)
       ? 'l’'
       : product.name.endsWith('e')
@@ -279,12 +283,14 @@ export function HomeHero({
   width,
   onOpen,
   campaigns,
+  products,
 }: {
   width: number;
   onOpen: (id: string) => void;
   campaigns?: Campaign[];
+  products?: Record<string, Product>;
 }) {
-  const slides = useMemo(() => buildSlides(campaigns), [campaigns]);
+  const slides = useMemo(() => buildSlides(campaigns, products), [campaigns, products]);
   const ref = useRef<ScrollView>(null);
   const scrollX = useSharedValue(0);
   const float = useSharedValue(0.5);
