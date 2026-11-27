@@ -92,14 +92,16 @@ sur `main` après fusion). PR n° 1 des deux dépôts ouvertes, non fusionnées.
 - Publications photo : Favoris › Découvrir › Photos (1 à 10 photos, description, J'aime, commentaires).
 - Raté de statut (1 sur 14) : cause trouvée côté tour — la position du client réécrivait la commande
   entière et effaçait un statut changé au même moment ; écritures conditionnelles.
+- Photos remplacées ou retirées dans la tour : fichier supprimé du stockage si plus rien ne le cite
+  (9 fichiers de test laissés par les passages précédents retirés à la main).
 - Identifiant de compte : 128 bits aléatoires. Relecture du catalogue 45 s + nouvel essai.
 
-**Vérifié (en ligne)** : t1 tour → app 80/80 · t2 app → tour + statuts 42/42 · t4 images 20/20 ·
+**Vérifié (en ligne)** : t1 tour → app 81/81 · t2 app → tour + statuts 42/42 · t4 images 20/20 ·
 t5 transport 8/8 · t3 boutons 954 clics, 0 erreur. Hors ligne : `test_app.py` 63/63, `tsc` 0 erreur,
 tour `npm run build` OK, tests unitaires (contenus, catalogue v2, paiements, transport, empreinte).
 Revue de code des correctifs de concurrence et du transport : 0 critique, 0 majeur.
 
-**Reste** : voir `ERREURS.md` (app n° 4, 8, 9 ; tour n° 2, 4, 8) ; vrais forfaits de transport à
+**Reste** : voir `ERREURS.md` (app n° 4, 8, 9 ; tour n° 2, 4) ; vrais forfaits de transport à
 saisir par l'équipe.
 
 ---

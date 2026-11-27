@@ -5,7 +5,7 @@ professionnel Sénégal (C), en 390×844.
 
     python scripts/online/t1_tour_vers_app.py [APP] [TOUR]
 """
-import datetime as dt, json, re, time
+import datetime as dt, json, re, time, urllib.error, urllib.request
 from playwright.sync_api import sync_playwright
 from common import (APP, TOUR, SHOTS, api, back, body, check, has_card, img_srcs, labels, new_page, open_product,
                     product, products, restore_from, save_results, search, signup, snapshot, upload_image,
@@ -19,6 +19,15 @@ print('Photo de départ :', len(snap['products']), 'produits,', len(snap['catego
 P = {p['id']: p for p in snap['products']}
 iso = lambda t: dt.datetime.fromtimestamp(t, dt.timezone.utc).isoformat()
 created_pubs = []
+uploaded = []  # photos envoyées pendant le test : supprimées du stockage à la remise en état
+
+
+def status_of(url):
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, method='GET'), timeout=30) as r:
+            return r.status
+    except urllib.error.HTTPError as e:
+        return e.code
 # Texte par défaut de la tour (shared/requests.js) : la base n'avait pas de réglage « missing ».
 DEFAULT_MISSING = {'enabled': True, 'title': 'Vous ne trouvez pas votre produit ?',
                    'body': 'Dites-nous quel produit vous recherchez. Nous reviendrons vers vous dès qu’il sera disponible.',
@@ -38,6 +47,7 @@ def apply_batch():
     up.append(upd('basilic', origin='Origine TEST'))
     up.append(upd('persil', description='Description TEST unique pour le persil.'))
     photo = upload_image('products', 'brocoli', (40, 160, 60))
+    uploaded.append(photo)
     check('tour : photo de produit envoyée (upload)', bool(photo), photo)
     if photo:
         up.append(upd('brocoli', photo_url=photo))
@@ -61,6 +71,7 @@ def apply_batch():
         check(f'tour : visibilité {pid} → {zone["mode"]}', r and r.get('zone', {}).get('mode') == zone['mode'], r.get('error', ''))
     # Emballages de la pomme : prix + réglage Sénégal + photo + description, prix nul, désactivé
     pack_photo = upload_image('packagings', 'pomme', (240, 180, 40))
+    uploaded.append(pack_photo)
     packs = [
         {'id': 'barquette-test', 'label': 'Barquette TEST', 'qty': 1.5, 'unit': 'kg', 'price': 5.5, 'step': 1,
          'audience': 'tous', 'available': True, 'photo_url': pack_photo, 'description': 'Desc emballage TEST',
@@ -79,12 +90,14 @@ def apply_batch():
     r = api('PUT', '/api/categories', {'order': order})
     check('tour : ordre des rayons changé', r and r.get('ok'), r)
     cat_img = upload_image('categories', 'seches', (120, 80, 200))
+    uploaded.append(cat_img)
     r = api('PUT', '/api/categories', {'id': 'seches', 'image_url': cat_img})
     check('tour : image de rayon enregistrée', r and r.get('image_url') == cat_img, r.get('error', ''))
     r = api('PUT', '/api/categories', {'id': 'legumes', 'pro_visible': False})
     check('tour : rayon masqué aux pros', r and r.get('pro_visible') is False, r.get('error', ''))
     # Filtres « Tout » et « De saison »
     f_img = upload_image('categories', 'filtre-tout', (30, 30, 200))
+    uploaded.append(f_img)
     r = api('PUT', '/api/settings', {'key': 'filters', 'value': {'tout': {'label': 'Tout TEST', 'image_url': f_img},
                                                                   'saison': {'label': 'Saison TEST'}}})
     check('tour : filtres renommés + image', r and r.get('value', {}).get('tout', {}).get('label') == 'Tout TEST', r.get('error', ''))
@@ -297,6 +310,8 @@ def run():
             check('remise en état : produits identiques à la photo de départ', same)
             check('remise en état : rayons et réglages', [c['label'] for c in after['categories']] == [c['label'] for c in snap['categories']]
                   and after['settings'].get('rules') == snap['settings'].get('rules') and after['settings'].get('filters') == snap['settings'].get('filters'))
+            left = [u for u in uploaded if u and status_of(u) < 400]
+            check('remise en état : photos de test supprimées du stockage (0 fichier laissé)', not left, left[:3])
             for p in (A, B, C):
                 check('aucune erreur de page', not [e for e in p.errors if 'favicon' not in e], [e[:120] for e in p.errors[:2]])
             browser.close()
