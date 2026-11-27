@@ -338,9 +338,9 @@ export function ProfileScreen() {
             Tour de contrôle
           </Text>
           <Text style={styles.addressText}>
-            Raccordements préparés vers l’application de contrôle de notre équipe. Dès que leurs
-            adresses seront configurées, produits, emballages (carton, sachet, box, pot…), prix,
-            offres, règles et profils se régleront depuis là-bas, sans modifier l’application.
+            {TEAM_ENDPOINT
+              ? 'Reliée à la base de contrôle de notre équipe : produits, emballages, prix, rayons, annonces et statuts de vos commandes s’y règlent, relus toutes les minutes.'
+              : 'Raccordements préparés vers l’application de contrôle de notre équipe. Dès que leurs adresses seront configurées, produits, emballages (carton, sachet, box, pot…), prix, offres, règles et profils se régleront depuis là-bas, sans modifier l’application.'}
           </Text>
           {CONTROL_LINKS.map((l) => (
             <View key={l.id} style={styles.linkRow}>
