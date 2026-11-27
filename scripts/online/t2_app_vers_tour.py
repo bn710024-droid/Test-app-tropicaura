@@ -203,7 +203,7 @@ def run():
             A.get_by_role('tab', name=re.compile('Favoris')).first.click()
             A.wait_for_timeout(900)
             A.get_by_role('button', name=re.compile('^Découvrir')).first.click()
-            d = wait_for(A, lambda: 'Vidéo TEST' in body(A), 80)
+            d = wait_for(A, lambda: any(url and url in (v or '') for v in A.eval_on_selector_all('video', 'els => els.map(e => e.currentSrc || e.src)')), 80)
             check('app : vidéo publiée dans la tour affichée dans Découvrir (≤ 60 s, sans recharger)', d is not None and d <= 62,
                   f'({d and round(d)} s)')
             A.wait_for_timeout(3000)

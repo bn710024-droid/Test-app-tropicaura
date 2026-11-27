@@ -13,6 +13,14 @@
 9. À configurer par toi (`A-CONNECTER.md`) : variables Supabase de la tour, `EXPO_PUBLIC_CONTROL_TOWER_URL`, identité EAS.
 10. Non testé : téléphone, vraie base Supabase, déploiement Vercel. Aucun style ni animation modifié (quai, carrousel, emballages intacts) ; seul ajout visuel : la carte « Produit introuvable » demandée.
 
+## Test complet en ligne (27/11 après-midi, `scripts/online/`)
+
+- t1 tour → app : 75/76 ; t2 app → tour + statuts : 31/34 ; t3 chaque bouton (deux apps, 390×844
+  et 1440×900) : 954 clics, 0 erreur console / page / réseau.
+- Corrigé : relecture 45 s + nouvel essai, vidéos relues sans recharger, textes de l'accueil de la
+  tour, cache des vidéos publiques. Données de test retirées (commandes, réactions, fichiers).
+- Restant : n° 10 à 13 ci-dessous ; tour n° 1, 7 et 8.
+
 Format : écran · étapes pour reproduire · cause probable · correctif proposé. Tout ce qui a pu
 être corrigé cette nuit est dans `BUGS.md` (état « Corrigé ») et n'apparaît pas ici.
 
@@ -76,3 +84,31 @@ Relevé automatique de cette nuit (scripts `hunt_errors.py` et `hunt_interaction
 - **Cause** : la tour n'a pas de champs `kicker` / `title` pour une annonce ; l'app les déduit
   de la saison du produit.
 - **Correctif** : ajouter accroche et titre à l'éditeur d'annonce de la tour (publiés tels quels).
+
+### 10. Annonce « toucher l'image » : l'application affiche quand même un bouton
+- **Écran** : Accueil › bandeau d'annonces.
+- **Reproduire** : tour › Publications › Annonces › image + lien « Toucher l'image » (produit Poire)
+  → l'application montre le bouton « Voir la poire » sous l'image.
+- **Cause** : `components/HomeHero.tsx` ignore `link` (`tap` / `button`) publié par `?v=2`.
+- **Correctif proposé** : pour `link: 'tap'`, rendre toute la diapositive touchable et ne pas
+  afficher de bouton. Non fait : touche au bandeau (design) — à valider.
+
+### 11. Étapes des demandes pro non affichées au client (« Contacté », « En discussion »)
+- **Écran** : Commandes / Demandes (compte professionnel).
+- **Reproduire** : tour › demande pro › étape « Contacté » puis « En discussion » → le client
+  voit toujours « En attente de réponse » (test en ligne t2).
+- **Cause** : `stageLabel` est reçu et enregistré, mais la carte de suivi n'affiche que le statut.
+- **Correctif proposé** : afficher `stageLabel` sous le statut dans la carte pro (texte seul).
+
+### 12. Statut parfois visible au-delà de 60 s (corrigé en partie)
+- **Mesuré en ligne** (t2, 3 passages) : statuts vus en 18–60 s, avec un raté isolé par passage
+  (> 75 s) sans erreur réseau relevée.
+- **Corrigé** (commit `fa6dde5`) : relecture toutes les 45 s (au lieu de 60) et un nouvel essai
+  8 s après une relecture manquée ; dernier passage : 18–44 s, un raté sur 14 statuts.
+- **Si cela persiste** : relire toutes les 20 s tant qu'une commande est en cours, ou recevoir les
+  changements de la tour (temps réel Supabase / notifications).
+
+### 13. `test_app.py` doit tourner sur un export SANS tour
+- `.env.local` (adresse de la tour) et le cache de Metro s'intègrent à l'export : le Profil affiche
+  alors « Connecté » et la vérification « 4 liens non connectés » échoue.
+- **Commande** : écarter `.env.local`, puis `npx expo export --platform web --clear`, puis le remettre.

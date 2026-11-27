@@ -16,7 +16,7 @@ from common import APP, SHOTS, TOUR, check, restore_from, save_results, signup, 
 DANGER = re.compile(r'supprim|effac|archiv|retir|déconnect|vider|réinitialis|annul|rembours|publi|envoy|import|restaur|'
                     r'payer|pointer|valider|confirmer|marquer|passer à|enregistr|ajouter au panier|à la demande|commander|'
                     r'finaliser|dupliquer|créer|masquer|désactiv|activer|téléverser|choisir un fichier|copier|partager|'
-                    r'whatsapp|appeler|e-mail|mail|ouvrir dans|télécharger|se connecter|me connecter|google', re.I)
+                    r'whatsapp|appeler|e-mail|mail|ouvrir dans|télécharger|se connecter|me connecter|google|exemple', re.I)
 IGNORED = ('favicon', '/_expo/static', 'ws://', 'Download the React DevTools')
 REPORT = []
 
@@ -73,7 +73,7 @@ def crawl(page, where, screen, reset):
             before = state(page)
             n_err = len(page.found)
             page.get_by_role(role, name=name, exact=True).first.click(timeout=4000)
-            page.wait_for_timeout(700)
+            page.wait_for_timeout(500)
             after = state(page)
             clicked += 1
             changed = after != before
@@ -88,14 +88,38 @@ def crawl(page, where, screen, reset):
 
 
 def app_screens(page, pro):
-    home = lambda: (page.goto(APP, timeout=120000), page.wait_for_timeout(2500))
-    tab = lambda name: (home(), page.get_by_role('tab', name=re.compile(name)).first.click(), page.wait_for_timeout(1200))
-    product = lambda q, n: (home(), page.get_by_label('Rechercher un fruit ou un légume').fill(q), page.wait_for_timeout(700),
-                            page.get_by_role('button', name=re.compile(n)).first.click(), page.wait_for_timeout(1500))
-    screens = {'Accueil': home, 'Favoris': lambda: tab('Favoris'), 'Panier': lambda: tab('Panier|Demande'),
-               'Commandes': lambda: tab('Commandes'), 'Profil': lambda: tab('Profil'),
-               'Fiche produit': (lambda: product('mangue séchée', '^Mangue séchée')) if pro else (lambda: product('baobab', '^Poudre de Baobab'))}
-    return screens
+    """Retour sur chaque écran par la navigation de l'application (sans recharger), avec repli."""
+    def safe(fn):
+        def go():
+            try:
+                page.keyboard.press('Escape')
+                fn()
+            except Exception:  # noqa: BLE001
+                page.goto(APP, timeout=120000)
+                page.wait_for_timeout(3000)
+                fn()
+        return go
+
+    def tab(name):
+        page.get_by_role('tab', name=re.compile(name)).first.click(timeout=5000)
+        page.wait_for_timeout(600)
+
+    def home():
+        tab('Marché|Catalogue')
+        box = page.get_by_label('Rechercher un fruit ou un légume')
+        if box.count() and box.input_value():
+            box.fill('')
+        page.wait_for_timeout(300)
+
+    def product():
+        home()
+        page.get_by_label('Rechercher un fruit ou un légume').fill('mangue séchée' if pro else 'baobab')
+        page.wait_for_timeout(600)
+        page.get_by_role('button', name=re.compile('^Mangue séchée' if pro else '^Poudre de Baobab')).first.click(timeout=5000)
+        page.wait_for_timeout(900)
+
+    return {'Accueil': safe(home), 'Favoris': safe(lambda: tab('Favoris')), 'Panier': safe(lambda: tab('Panier|Demande')),
+            'Commandes': safe(lambda: tab('Commandes')), 'Profil': safe(lambda: tab('Profil')), 'Fiche produit': safe(product)}
 
 
 def run():
