@@ -20,3 +20,4 @@ Constats faits en branchant l'application sur la tour de contrôle. « Corrigé 
 | 14 | Faible | `test_app.py` : serveur mono-fil, premier écran parfois > 30 s. | **Corrigé** : serveur multi-fil (63/63). |
 | 15 | Moyenne | Position pour le livreur envoyée une seule fois (à la commande), jamais rafraîchie. | **Corrigé** : rafraîchie à chaque relecture tant que `tracking`, sans redemander l'accord (testé). |
 | 16 | Faible | `DesktopHero` (mise en page ordinateur, désactivée) lisait les annonces embarquées. | **Corrigé** : annonces et produits publiés. |
+| 17 | Faible | Emballage publié par la tour : « 14,50 € le cagette de 5000 g » (article deviné, grammes). | **Corrigé** : la tour publie `unitLabel` neutre « par cagette de 5 kg » (vérifié). |
