@@ -342,23 +342,37 @@ export function ProductScreen() {
 
   // Le même geste est posé sur deux zones : le visuel et le bloc d'informations.
   // On glisse donc n'importe où sur la fiche (hors liste « Dans le même rayon »).
+  // Un geste commencé sur la rangée d'emballages est verrouillé : il ne déplace jamais le
+  // carrousel (sur le web, `manager.fail()` n'interrompt pas le geste ; le verrou, si).
+  const rowLock = useSharedValue(false);
   const makePan = useCallback(
-    () =>
+    (onRow: boolean) =>
       Gesture.Pan()
         .enabled(count > 1)
         .activeOffsetX([-10, 10])
         .failOffsetY([-14, 14])
+        .onTouchesDown((e, manager) => {
+          'worklet';
+          const t = e.allTouches[0];
+          const inRow =
+            onRow && !!t && formatsH.value > 0 && t.y >= formatsY.value && t.y <= formatsY.value + formatsH.value;
+          rowLock.value = inRow;
+          if (inRow) manager.fail();
+        })
         .onStart(() => {
           'worklet';
+          if (rowLock.value) return;
           cancelAnimation(progress);
           dragStart.value = progress.value;
         })
         .onUpdate((e) => {
           'worklet';
+          if (rowLock.value) return;
           progress.value = dragStart.value - e.translationX / dragW;
         })
         .onEnd((e) => {
           'worklet';
+          if (rowLock.value) return;
           // On prolonge un peu le geste selon sa vitesse, puis on se cale sur un produit
           // (au plus un cran au-delà de celui qui est sous le doigt).
           const near = Math.round(progress.value);
@@ -367,20 +381,10 @@ export function ProductScreen() {
           lastDragAt.value = Date.now();
           progress.value = withSpring(target, { ...SNAP, velocity: -e.velocityX / dragW });
         }),
-    [count, dragW, progress, dragStart, lastDragAt],
+    [count, dragW, progress, dragStart, lastDragAt, formatsY, formatsH, rowLock],
   );
-  const panStage = useMemo(makePan, [makePan]);
-  const panBody = useMemo(
-    () =>
-      makePan().onTouchesDown((e, manager) => {
-        'worklet';
-        const t = e.allTouches[0];
-        if (t && formatsH.value > 0 && t.y >= formatsY.value && t.y <= formatsY.value + formatsH.value) {
-          manager.fail();
-        }
-      }),
-    [makePan, formatsY, formatsH],
-  );
+  const panStage = useMemo(() => makePan(false), [makePan]);
+  const panBody = useMemo(() => makePan(true), [makePan]);
 
   // Web : le glissement à deux doigts d'un pavé tactile (ou Maj + molette) n'émet pas de
   // « toucher » mais des événements de défilement horizontal. On les suit de la même façon :
