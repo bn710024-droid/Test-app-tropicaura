@@ -180,8 +180,71 @@ def back(page):
     page.wait_for_timeout(700)
 
 
-def restore_from(snapshot):
-    """Remet chaque produit, rayon et réglage modifié dans l'état de la photo prise avant le test."""
+PAYMENTS_ALL = {'orange_money': True, 'wave': True, 'virement': True, 'carte': True}
+
+
+class Journal:
+    """
+    Ce qu'un test a lui-même modifié (réglages, livraison), remis à la valeur d'avant à la fin —
+    SEULEMENT si personne ne l'a changé entre-temps. Rien d'autre n'est jamais réécrit : le
+    propriétaire saisit de vraies données, aucune remise à zéro globale.
+    """
+
+    def __init__(self):
+        self.done = []
+
+    def setting(self, key, value):
+        before = (api('GET', '/api/settings') or {}).get(key)
+        r = api('PUT', '/api/settings', {'key': key, 'value': value})
+        if r and '_status' not in r:
+            self.done.append(('setting', key, before, r.get('value')))
+        return r
+
+    def logistics(self, value):
+        before = api('GET', '/api/orders')['logistics']
+        r = api('PUT', '/api/orders', {'logistics': value})
+        if r and '_status' not in r:
+            self.done.append(('logistics', None, before, r))
+        return r
+
+    def undo(self, kind=None, key=None):
+        """Défait, du plus récent au plus ancien, ce qui a été modifié (`kind`/`key` : seulement cela)."""
+        keep = []
+        for item in reversed(self.done):
+            k, name, before, after = item
+            if (kind and k != kind) or (key and name != key):
+                keep.append(item)
+                continue
+            if k == 'setting':
+                now = (api('GET', '/api/settings') or {}).get(name)
+                if now != after:
+                    print(f'  réglage « {name} » changé par quelqu’un d’autre pendant le test : laissé tel quel')
+                    continue
+                # Moyens de paiement jamais réglés : « tous activés » publie exactement la même chose.
+                api('PUT', '/api/settings', {'key': name, 'value': PAYMENTS_ALL if (name == 'payments' and before is None) else before})
+            elif k == 'logistics':
+                now = api('GET', '/api/orders')['logistics']
+                if now != after:
+                    print('  livraison changée par quelqu’un d’autre pendant le test : laissée telle quelle')
+                    continue
+                api('PUT', '/api/orders', {'logistics': before})
+        self.done = list(reversed(keep))
+
+
+def require_test_data(name):
+    """
+    Tests qui modifient des produits, rayons ou réglages réels (t1, t3) : refusés par défaut depuis
+    que le propriétaire saisit de vraies données. À réécrire sur des éléments créés et marqués TEST.
+    """
+    import os
+    if os.environ.get('TROPICAURA_ECRITURE_REELLE') != '1':
+        print(f'{name} modifie des éléments réels du catalogue : lancement refusé (à réécrire sur des éléments TEST).')
+        sys.exit(2)
+
+
+def restore_test_catalog(snapshot):
+    """Remise à l'état d'une photo : UNIQUEMENT sur un catalogue d'essai, jamais le catalogue réel."""
+    require_test_data('restauration')
     now = {p['id']: p for p in products()}
     for p in snapshot['products']:
         cur = now.get(p['id'])
@@ -211,4 +274,5 @@ def restore_from(snapshot):
 
 
 def snapshot():
+    """Photo en lecture seule (comparaisons) : elle ne sert JAMAIS à tout réécrire."""
     return {'products': products(), 'categories': api('GET', '/api/categories'), 'settings': api('GET', '/api/settings')}

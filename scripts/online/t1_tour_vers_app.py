@@ -7,9 +7,11 @@ professionnel Sénégal (C), en 390×844.
 """
 import datetime as dt, json, re, time, urllib.error, urllib.request
 from playwright.sync_api import sync_playwright
-from common import (APP, TOUR, SHOTS, api, back, body, check, has_card, img_srcs, labels, new_page, open_product,
-                    product, products, restore_from, save_results, search, signup, snapshot, upload_image,
+from common import (require_test_data, APP, TOUR, SHOTS, api, back, body, check, has_card, img_srcs, labels, new_page, open_product,
+                    product, products, restore_test_catalog, save_results, search, signup, snapshot, upload_image,
                     upload_publication_file, v2, wait_for)
+
+require_test_data('t1')
 
 SNAP = SHOTS / 'online-snapshot.json'
 snap = snapshot()
@@ -300,7 +302,7 @@ def run():
             for pid in created_pubs:
                 api('DELETE', '/api/publications', {'id': pid})
             api('PUT', '/api/settings', {'key': 'missing', 'value': DEFAULT_MISSING})
-            restore_from(snap)
+            restore_test_catalog(snap)
             after = snapshot()
             same = all(a == b for a, b in zip(
                 [{k: p.get(k) for k in ('id', 'name', 'variety', 'retail', 'wholesale', 'available', 'archived', 'months',

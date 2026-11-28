@@ -3,13 +3,13 @@ TOUR → APP, en ligne, en 390×844 : forfait transport des particuliers.
 
 Réglages › Transport dans la tour (Sénégal à 7,50 €) → publié dans ?v=2 → affiché à la validation
 de commande ; puis forfaits retirés dans la tour → l'application reprend son barème (6,00 €) sans
-être rechargée (≤ 60 s). Aucune commande n'est envoyée ; le réglage est retiré à la fin.
+être rechargée (≤ 60 s). Aucune commande n’est envoyée ; le réglage est remis à sa valeur d’avant.
 
     python scripts/online/t5_transport.py [APP] [TOUR]
 """
 import re, time
 from playwright.sync_api import sync_playwright
-from common import SHOTS, api, body, check, new_page, open_product, save_results, signup, wait_for
+from common import SHOTS, Journal, api, body, check, new_page, open_product, save_results, signup, wait_for
 
 FEES = {'sn': 7.5, 'ao': 24, 'af': 36, 'eu': 48, 'na': 62, 'monde': 78}
 
@@ -30,9 +30,10 @@ def run():
     with sync_playwright() as pw:
         browser = pw.chromium.launch()
         try:
+            J = Journal()
             r = api('PUT', '/api/settings', {'key': 'transport', 'value': {**FEES, 'eu': -1}})
             check('tour : forfait négatif refusé', (r or {}).get('_status') == 400, r)
-            r = api('PUT', '/api/settings', {'key': 'transport', 'value': FEES})
+            r = J.setting('transport', FEES)
             check('tour : forfaits de transport enregistrés (réglage transport)', (r or {}).get('value', {}).get('sn') == 7.5, r)
             ok, zones = published(7.5)
             check('tour : ?v=2 publie transport.zones (Sénégal 7,5 €)', ok, zones)
@@ -61,7 +62,7 @@ def run():
             check('app : forfait de la tour affiché à la validation (7,50 €)', shown, '' if shown else 'absent')
             page.screenshot(path=str(SHOTS / 'online-t5-transport-tour.png'))
 
-            r = api('PUT', '/api/settings', {'key': 'transport', 'value': None})
+            r = J.setting('transport', None)
             check('tour : forfaits retirés (réglage supprimé)', (r or {}).get('value', 'x') is None, r)
             ok, zones = published(None)
             check('tour : ?v=2 ne publie plus transport', ok, zones)
@@ -72,7 +73,7 @@ def run():
             check('app : aucune erreur dans la console', not errors, errors[:3])
             ctx.close()
         finally:
-            api('PUT', '/api/settings', {'key': 'transport', 'value': None})
+            J.undo()
             browser.close()
     save_results('t5')
 

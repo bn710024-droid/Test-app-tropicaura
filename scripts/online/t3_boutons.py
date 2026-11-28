@@ -11,7 +11,9 @@ ces actions sont testées par t1 et t2 avec remise en état. La tour est remise 
 """
 import hashlib, json, re
 from playwright.sync_api import sync_playwright
-from common import APP, SHOTS, TOUR, check, restore_from, save_results, signup, snapshot
+from common import require_test_data, APP, SHOTS, TOUR, check, restore_test_catalog, save_results, signup, snapshot
+
+require_test_data('t3')
 
 DANGER = re.compile(r'supprim|effac|archiv|retir|déconnect|vider|réinitialis|annul|rembours|publi|envoy|import|restaur|'
                     r'payer|pointer|valider|confirmer|marquer|passer à|enregistr|ajouter au panier|à la demande|commander|'
@@ -149,7 +151,7 @@ def run():
                 print(f'tour {w}×{h} · {route or "accueil"} : {c} cliqués, {e} avec effet', flush=True)
             ctx.close()
         browser.close()
-    restore_from(snap)
+    restore_test_catalog(snap)
     (SHOTS / 'online-t3-boutons.json').write_text(json.dumps(REPORT, ensure_ascii=False, indent=1), encoding='utf-8')
     errs = [r for r in REPORT if r['erreurs']]
     silent = [r for r in REPORT if r['effet'] is False]

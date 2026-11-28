@@ -9,7 +9,7 @@ testée. Tout ce qui a été créé est supprimé à la fin.
 """
 import pathlib, re, time
 from playwright.sync_api import sync_playwright
-from common import (APP, SHOTS, api, body, check, img_srcs, labels, new_page, open_product, png, save_results, search,
+from common import (APP, SHOTS, Journal, api, body, check, img_srcs, labels, new_page, open_product, png, save_results, search,
                     signup, upload_publication_file, wait_for)
 
 VIDEO = pathlib.Path(__file__).resolve().parents[2] / 'assets' / 'videos' / 'commander.mp4'
@@ -76,6 +76,7 @@ def run():
         ctxA, A = new_page(browser, geo={'latitude': 14.7167, 'longitude': -17.4677})
         ctxB, B = new_page(browser)
         ctxC, C = new_page(browser)
+        J = Journal()
         try:
             polls = []
             def on_poll(r):
@@ -95,7 +96,8 @@ def run():
             logi = api('GET', '/api/orders')['logistics']
 
             # ── Moyens de paiement : « Virement » désactivé dans la tour → absent de l'application
-            r = api('PUT', '/api/settings', {'key': 'payments', 'value': {'orange_money': True, 'wave': True, 'virement': False, 'carte': True}})
+            # Réglages touchés par le test : remis à leur valeur d'avant, et seulement s'ils n'ont pas changé.
+            r = J.setting('payments', {'orange_money': True, 'wave': True, 'virement': False, 'carte': True})
             check('tour : moyen de paiement désactivé (réglage payments)', (r or {}).get('value', {}).get('virement') is False, r)
             # Le catalogue est servi avec un cache de 5 s : on relit jusqu'à 20 s.
             pays = []
@@ -105,7 +107,7 @@ def run():
                     break
                 time.sleep(2)
             check('tour : ?v=2 ne publie que les moyens activés', pays == ['orange_money', 'wave', 'carte'], pays)
-            r = api('PUT', '/api/settings', {'key': 'payments', 'value': {'orange_money': False, 'wave': False, 'virement': False, 'carte': False}})
+            r = J.setting('payments', {'orange_money': False, 'wave': False, 'virement': False, 'carte': False})
             check('tour : impossible de tout désactiver', (r or {}).get('_status') == 400, r)
             A.wait_for_timeout(50000)  # une relecture du catalogue (45 s)
 
@@ -113,7 +115,7 @@ def run():
             methods, text = place_order(A, 'pomme', '^Pomme', 'Sénégal', '12 Rue 10, Médina', 'Dakar', NAMES['A'],
                                         'awa@exemple.test', '+221 77 000 00 21', True)
             check('moyens de paiement : seuls les 3 activés proposés (sans virement)', methods == ['Orange Money', 'Wave', 'Carte bancaire'], methods)
-            api('PUT', '/api/settings', {'key': 'payments', 'value': {'orange_money': True, 'wave': True, 'virement': True, 'carte': True}})
+            J.undo('setting', 'payments')
             mine = orders_of(NAMES['A'])
             check('commande Sénégal reçue par la tour', len(mine) == 1, f'({len(mine)})')
             o = mine[0] if mine else None
@@ -147,7 +149,8 @@ def run():
                 check('annulation dans la tour → « Annulée » chez le client', d is not None and d <= 62, f'({d and round(d)} s)')
 
             # ── Commande France avec GP
-            api('PUT', '/api/orders', {'logistics': dict(logi, gpCountries=['FR'])})
+            # La France est AJOUTÉE aux pays du GP (ceux déjà réglés par le propriétaire restent).
+            J.logistics(dict(logi, gpCountries=sorted(set(logi['gpCountries']) | {'FR'})))
             signup(B, 'particulier', NAMES['B'], '+33 6 00 00 00 22', 'France')
             B.wait_for_timeout(1500)
             _, text = place_order(B, 'pomme', '^Pomme', 'France', '10 rue de Rivoli', 'Paris', NAMES['B'],
@@ -162,7 +165,7 @@ def run():
                     api('PUT', '/api/orders', {'id': fr[0]['id'], **change})
                     d = tracked(B, label)
                     check(f'France : « {label} » affiché', d is not None and d <= 62, f'({d and round(d)} s)')
-            api('PUT', '/api/orders', {'logistics': dict(logi)})
+            J.undo('logistics')
 
             # ── Demandes pro : avion puis bateau
             reqs = {}
@@ -280,7 +283,7 @@ def run():
                 d = wait_for(A, lambda: (x := pstats()).get('views', 0) >= 1 and x.get('likes', 0) >= 1 and x.get('comments', 0) >= 1, 40, 2000)
                 check('tour : vue + J’aime + commentaire de la publication photo reçus', d is not None, pstats())
         finally:
-            api('PUT', '/api/settings', {'key': 'payments', 'value': {'orange_money': True, 'wave': True, 'virement': True, 'carte': True}})
+            J.undo()
             # ── Nettoyage : commandes, demandes, introuvables, publications, J'aime/commentaires de test
             for o in api('GET', '/api/orders')['orders']:
                 if o['customer'].get('name') in NAMES.values() or str(o['customer'].get('company', '')).startswith('Société Test'):
