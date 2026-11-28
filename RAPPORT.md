@@ -72,6 +72,28 @@ Ce fichier garde la trace de chaque passage de modifications. Nouvelles entrées
 
 ---
 
+## Passage 21 — 28 novembre 2026 : particuliers = produits emballés, prix par zone
+
+- **Zones et devises** (une seule source, tour `shared/zones.js`, copie de secours `lib/zones.ts`) :
+  F CFA (SN CI ML BF NE BJ TG GW), € (UE + GB CH NO IS LI MC AD SM VA ME XK), $ partout ailleurs
+  et pays inconnu. La devise vient du pays du COMPTE, jamais choisie à la main.
+- **Fiche tour** : type particuliers (Emballé / Frais) en tête, bloc Emballages après Identité,
+  grille de prix 3 colonnes (case vide = pas vendu dans cette zone), pays zone / seulement / sauf,
+  photo seule + photo produit dans l'emballage, emballage par défaut, alerte « devise inversée »,
+  aperçu SN / CI / FR / US / MA. Transport : 3 montants par zone.
+- **Migration en ligne** (liste validée avant) : 38 produits frais « Pour les particuliers »
+  désactivés (prix gardés) ; 4 séchés/transformés → emballés ; baobab « Sachet Sénégal »
+  2 500 F CFA (SN seulement) ; pot de bissap sans prix rendu inactif. Rien supprimé.
+- **App** : carte = produit nu au prix de l'emballage par défaut dans la devise du client ; fiche
+  ouverte sur l'emballage par défaut, plus de « Produit initial » ; panier, transport et commande
+  dans une seule devise ; changement de pays du compte → panier vidé avec message.
+- **Rangée d'emballages** : un glissement qui y commence ne change plus de produit (doigt, souris,
+  molette). Sur le web `manager.fail()` n'interrompait pas le geste : remplacé par un verrou.
+- **Tests** : `test_app.py` 63/63 ; en ligne `t7_b2c.py` 32/32 (comptes SN, FR, US ; produit et
+  emballages TEST supprimés, transport remis à sa valeur d'avant).
+
+---
+
 ## Passage 20 — 28 novembre 2026 (nuit) : paniers en cours, audit de correspondance, tests sûrs
 
 **Demandes** : paniers en cours app → tour ; plus aucune remise à zéro globale (le propriétaire saisit

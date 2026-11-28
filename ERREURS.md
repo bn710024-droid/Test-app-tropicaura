@@ -129,3 +129,17 @@ Relevé automatique de cette nuit (scripts `hunt_errors.py` et `hunt_interaction
   (touche au carrousel en arc).
 - Test à la main (t6) : emballage complet créé dans la tour → message « Fiche enregistrée » ;
   erreur de validation visible (toast + champ en rouge), rien d'enregistré → ?v=2 → app ; t6 : 13/13.
+
+### 16. Particuliers : produits emballés, prix par zone (28/11)
+- **Geste de la rangée d'emballages** : `manager.fail()` dans `onTouchesDown` n'arrête pas le
+  glissement sur le web (rangée qui ne défile pas, ex. 2 emballages en France → produit changé).
+  Corrigé par un verrou (`rowLock`) lu dans onStart / onUpdate / onEnd.
+- **Pièges du test en ligne** : le bandeau « quantité / total / ajouter » recouvre le bas de la
+  fiche (amener la rangée plus haut avant de la glisser) ; la tour met le catalogue en cache 5 s
+  (+ 5 s) : attendre la nouvelle version avant d'ouvrir l'app ; espaces insécables dans les montants.
+- **Limite connue (souris seulement)** : glisser la rangée à la souris et relâcher sur un autre
+  emballage le choisit (la page remonte vers l'aperçu). Rien au doigt. Non corrigé (hors périmètre).
+- **Conséquences de la migration** : au Sénégal, seul le baobab (Sachet Sénégal) est proposé ;
+  aux États-Unis, rien tant qu'aucun prix en $ n'est saisi ; la mangue séchée n'a plus d'emballage
+  (retirés à la main le 28/11 à 00:18 et 00:20) ; le pays du compte n'est pas modifiable dans le
+  Profil (le vidage du panier est prêt pour le jour où il le sera).

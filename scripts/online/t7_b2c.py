@@ -141,12 +141,14 @@ def run():
                 y = box['y'] + box['height'] / 2
                 hit = A.evaluate("([x, y]) => !!document.elementFromPoint(x, y)?.closest('[role=radiogroup]')", [box['x'] + box['width'] / 2, y])
                 touch_swipe(ctx, A, y)
+                A.mouse.move(box['x'] + box['width'] / 2, y)
+                A.mouse.wheel(300, 0)
+                A.wait_for_timeout(1200)
+                # Souris en dernier : relâchée sur un autre emballage, elle le choisit (la page remonte).
                 A.mouse.move(box['x'] + box['width'] - 20, y)
                 A.mouse.down()
                 A.mouse.move(box['x'] + 20, y, steps=12)
                 A.mouse.up()
-                A.mouse.move(box['x'] + box['width'] / 2, y)
-                A.mouse.wheel(300, 0)
                 A.wait_for_timeout(1200)
                 after = pager(A)
                 check(f'{code} : glisser la rangée d’emballages (doigt, souris, molette) ne change pas de produit',
@@ -157,7 +159,7 @@ def run():
                 A.wait_for_timeout(1500)
                 add = A.get_by_role('button', name=re.compile('^Ajouter .* au panier')).last.get_attribute('aria-label') or ''
                 pot = fmt({'XOF': 3000, 'EUR': 5, 'USD': 6}[cur] * 2, cur)
-                check(f'{code} : Pot TEST choisi → palier 2, total {pot}', pot in norm(add) and '2 ' in add, add[:100])
+                check(f'{code} : Pot TEST choisi → palier 2, total {pot}', pot in norm(add) and 'Ajouter 2 ' in norm(add), add[:100])
                 A.get_by_role('radio', name=re.compile('^Sachet TEST')).first.click()
                 A.wait_for_timeout(800)
                 A.get_by_role('button', name=re.compile('^Ajouter .* au panier')).last.click()
