@@ -61,7 +61,7 @@ test('catalogue avec transport en euros : forfaits lus par zone', () => {
 
 test('forfait du Sénégal en francs CFA : montant et devise gardés, sans conversion', () => {
   const zones = published.zones.map((z) => (z.id === 'sn' ? { ...z, fee: 2500, currency: 'XOF' } : z));
-  const doc = parseCatalog({ ...fixture, transport: { ...published, zones } });
+  const doc = parseCatalog({ ...fixture, transport: { ...published, currency: 'XOF+EUR', zones } });
   assert.deepEqual(doc.transport.sn, { fee: 2500, currency: 'XOF' });
   assert.deepEqual(transportZone('SN', doc.transport).currency, 'XOF');
   assert.equal(transportFee('SN', doc.transport), 2500);

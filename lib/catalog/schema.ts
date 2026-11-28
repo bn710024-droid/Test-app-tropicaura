@@ -629,7 +629,8 @@ function parseTransport(
 ): Readonly<Record<string, { fee: number; currency: string }>> | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const o = raw as Record<string, unknown>;
-  if (o.currency !== 'EUR' || !Array.isArray(o.zones)) return undefined;
+  // 'XOF+EUR' : certaines zones en francs CFA (chaque zone dit sa devise).
+  if ((o.currency !== 'EUR' && o.currency !== 'XOF+EUR') || !Array.isArray(o.zones)) return undefined;
   const MAX: Record<string, number> = { EUR: 10000, XOF: 10000000 };
   const fees = Object.fromEntries(
     o.zones
