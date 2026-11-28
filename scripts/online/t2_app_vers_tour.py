@@ -180,7 +180,9 @@ def cart_checks(browser):
             d = cart_wait(lambda x: x is None)
             check('panier vidé → il disparaît de la tour (≤ 40 s)', d is not None and d <= 42, f'({d and round(d)} s)')
 
-            # Panier puis commande → « Commandé » et commande liée
+            # Panier puis commande → « Commandé » et commande liée (depuis le Marché, où est la recherche)
+            D.get_by_role('tab', name=re.compile('Marché')).first.click()
+            D.wait_for_timeout(1200)
             place_order(D, 'pomme', '^Pomme', 'Sénégal', '5 Rue 12, Plateau', 'Dakar', NAMES['D'],
                         'dina@exemple.test', '+221 77 000 00 41', False)
             mine = orders_of(NAMES['D'])
@@ -448,6 +450,30 @@ def run():
             browser.close()
 
 
+def run_carts_only():
+    """Seulement les paniers (TROPICAURA_PANIERS_SEULS=1), avec leur nettoyage ciblé."""
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        try:
+            cart_checks(browser)
+        finally:
+            for o in api('GET', '/api/orders')['orders']:
+                if o['customer'].get('name') == NAMES['D']:
+                    api('DELETE', '/api/orders', {'id': o['id']})
+            for c in api('GET', '/api/orders?vue=paniers').get('carts', []):
+                if c['account'].get('name') == NAMES['D']:
+                    api('DELETE', '/api/orders', {'cartId': c['id']})
+            check('nettoyage : commande et panier de test supprimés',
+                  not [o for o in api('GET', '/api/orders')['orders'] if o['customer'].get('name') == NAMES['D']]
+                  and not [c for c in api('GET', '/api/orders?vue=paniers').get('carts', []) if c['account'].get('name') == NAMES['D']])
+            browser.close()
+
+
 if __name__ == '__main__':
-    run()
-    save_results('t2')
+    import os
+    if os.environ.get('TROPICAURA_PANIERS_SEULS') == '1':
+        run_carts_only()
+        save_results('t2-paniers')
+    else:
+        run()
+        save_results('t2')

@@ -72,6 +72,31 @@ Ce fichier garde la trace de chaque passage de modifications. Nouvelles entrées
 
 ---
 
+## Passage 20 — 28 novembre 2026 (nuit) : paniers en cours, audit de correspondance, tests sûrs
+
+**Demandes** : paniers en cours app → tour ; plus aucune remise à zéro globale (le propriétaire saisit
+de vraies données) ; audit de chaque champ tour → ?v=2 → app, test à la main d'un emballage, correction
+des « non ».
+
+**Fait**
+- Tests : journal ciblé (un réglage n'est remis que s'il n'a pas changé) ; t1/t3 refusés sur le
+  catalogue réel ; éléments TEST seulement, retirés un par un.
+- Paniers : horodatage des lignes, secret de compte, envoi de l'état complet (3 s / arrière-plan),
+  table `carts`, prix recalculés par la tour, page « Paniers » (filtres, tri, KPI par devise),
+  fiche avec relance WhatsApp / appel / e-mail, lien commande et client, tableau de bord.
+- Audit (`AUDIT.md` de la tour) : 98 champs ; corrigés — maximum d'emballage, devise F CFA (prix
+  par pays des emballages et forfait de transport), offre pro sans mode, référence du conteneur,
+  illustration des rayons, nom d'unité, « · » seul, surtitre/titre des annonces ; restants annoncés
+  dans la tour.
+
+**Vérifié** : t2 61/61 (paniers 19/19) · t6 (emballage à la main) 13/13 · test_app 63/63 · tests unitaires tour
+(paniers 12, catalogue 16, transport 10…) et app · revue de code : 0 critique, 0 majeur.
+
+**Reste** : t1 à réécrire sur des éléments TEST ; rapport des photos (carrousel) ; décisions :
+emballages pros, texte des annonces image, titre des vidéos.
+
+---
+
 ## Passage 19 — 27 novembre 2026 (jour et soir) : mise en ligne, test complet, correctifs
 
 **Demande** : brancher Supabase + Vercel, remplir la base, test complet en ligne (tour → app,

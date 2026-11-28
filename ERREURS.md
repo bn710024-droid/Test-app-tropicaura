@@ -80,7 +80,7 @@ Relevé automatique de cette nuit (scripts `hunt_errors.py` et `hunt_interaction
   `audience: 'pros'` de `?v=2`.
 - **Correctif** : à décider (les pros commandent par offre avion / bateau).
 
-### 9. Bandeau : accroche « Campagne à venir · dès mai » déduite par l'app
+### 9. ~~Bandeau : accroche « Campagne à venir · dès mai » déduite par l'app~~ — corrigé (28/11 : surtitre et titre réglables dans la tour)
 - **Cause** : la tour n'a pas de champs `kicker` / `title` pour une annonce ; l'app les déduit
   de la saison du produit.
 - **Correctif** : ajouter accroche et titre à l'éditeur d'annonce de la tour (publiés tels quels).
@@ -109,3 +109,23 @@ Relevé automatique de cette nuit (scripts `hunt_errors.py` et `hunt_interaction
 - `.env.local` (adresse de la tour) et le cache de Metro s'intègrent à l'export : le Profil affiche
   alors « Connecté » et la vérification « 4 liens non connectés » échoue.
 - **Commande** : écarter `.env.local`, puis `npx expo export --platform web --clear`, puis le remettre.
+
+### 14. Paniers en cours (nouveau, 28/11) — limites connues
+- **En place** : l'app envoie l'état complet du panier (3 s après une modification, au passage en
+  arrière-plan) ; la tour recalcule les prix d'après son catalogue, par devise ; page « Paniers »
+  (actifs, abandonnés, commandés), relance WhatsApp / appel / e-mail. Test en ligne t2 : 61/61 (paniers 19/19).
+- **Limites** (revue de code, sans gravité) : un envoi est lié au secret du compte au premier envoi ;
+  les prix rangés restent ceux du dernier changement du panier (une baisse de prix n'y apparaît
+  qu'au changement suivant) ; si une modification arrive pile après la commande, le panier vidé
+  peut être supprimé au lieu d'être marqué « commandé » (rare) ; comme les commandes, la réception
+  n'est pas authentifiée (30 envois / minute / appareil).
+
+### 15. Audit de correspondance tour → application (28/11)
+- Tableau complet : `AUDIT.md` du dépôt de la tour. 98 champs, 15 NON au départ (12 problèmes) :
+  corrigés — maximum d'emballage, forfait de transport en F CFA, quantités d'une offre pro sans
+  mode, « (référence Europe) », produit d'illustration d'un rayon, nom d'unité d'un emballage,
+  « · » seul, surtitre et titre des annonces ; restants (décision) — emballages « Pros », texte
+  d'une annonce image seule, titre/description des vidéos, rapport largeur/hauteur des photos
+  (touche au carrousel en arc).
+- Test à la main (t6) : emballage complet créé dans la tour → message « Fiche enregistrée » ;
+  erreur de validation visible (toast + champ en rouge), rien d'enregistré → ?v=2 → app ; t6 : 13/13.
