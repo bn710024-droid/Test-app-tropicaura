@@ -134,7 +134,7 @@ def new_page(browser, width=390, height=844, geo=None):
     return ctx, page
 
 
-def signup(page, kind, name, phone, country):
+def signup(page, kind, name, phone, country, email=''):
     """Inscription dans l'application en ligne (compte local à l'appareil, données de test)."""
     page.goto(APP, timeout=120000)
     page.get_by_role('button', name='Créer mon compte').first.click(timeout=90000)
@@ -145,6 +145,8 @@ def signup(page, kind, name, phone, country):
         page.get_by_label('Téléphone', exact=True).fill(phone)
     else:
         page.get_by_label('Numéro de téléphone').fill(phone)
+    if email:
+        page.get_by_label(re.compile('^E-mail')).first.fill(email)
     page.get_by_role('button', name='Choisir votre pays').click()
     page.get_by_label('Rechercher un pays').fill(country)
     page.wait_for_timeout(300)

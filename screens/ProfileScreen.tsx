@@ -320,7 +320,7 @@ export function ProfileScreen() {
           </Text>
           <Text style={styles.addressText}>
             {TEAM_ENDPOINT
-              ? `Votre compte et vos favoris sont enregistrés sur cet appareil. Vos ${isPro ? 'demandes' : 'commandes'} sont transmises à notre équipe, qui en règle le suivi. Pour les retrouver après une déconnexion, reconnectez-vous ici avec votre e-mail ou votre numéro.`
+              ? `Votre compte et vos favoris sont enregistrés sur cet appareil. Vos ${isPro ? 'demandes' : 'commandes'} sont transmises à notre équipe, qui en règle le suivi. Votre panier est visible par notre équipe, pour vous aider à finaliser votre commande. Pour les retrouver après une déconnexion, reconnectez-vous ici avec votre e-mail ou votre numéro.`
               : `Prototype sans serveur : votre compte, vos favoris et vos ${isPro ? 'demandes' : 'commandes'} sont enregistrés sur cet appareil uniquement. Pour les retrouver après une déconnexion, reconnectez-vous ici avec votre e-mail ou votre numéro.`}
           </Text>
           <Text style={[styles.addressText, { marginTop: 10 }]}>

@@ -256,8 +256,8 @@ export type CatalogDocument = {
   payments?: CatalogPayment[];
   /** Message « Produit introuvable » (schema 2) ; absent : rien n'est proposé. */
   productRequest?: ProductRequestMessage | null;
-  /** Forfaits de transport par zone, en euros (schema 2) ; absents : barème de l'application. */
-  transport?: Readonly<Record<string, number>>;
+  /** Forfaits de transport par zone, avec leur devise (schema 2) ; absents : barème de l'application. */
+  transport?: Readonly<Record<string, { fee: number; currency: string }>>;
 };
 
 /** Valeurs de départ des règles (demandées pour les grossistes et importateurs). */
@@ -620,24 +620,31 @@ export function parseCatalog(raw: unknown): CatalogDocument | null {
   };
 }
 
-/** Forfaits de transport : en euros seulement, un montant de 0 à 10 000 € par zone. */
-function parseTransport(raw: unknown): Readonly<Record<string, number>> | undefined {
+/**
+ * Forfaits de transport : un montant par zone, en euros (0 à 10 000 €) ou en francs CFA
+ * (0 à 10 000 000 F CFA). Jamais de conversion : la devise de la zone est gardée.
+ */
+function parseTransport(
+  raw: unknown,
+): Readonly<Record<string, { fee: number; currency: string }>> | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const o = raw as Record<string, unknown>;
   if (o.currency !== 'EUR' || !Array.isArray(o.zones)) return undefined;
+  const MAX: Record<string, number> = { EUR: 10000, XOF: 10000000 };
   const fees = Object.fromEntries(
     o.zones
       .map((z) => (z && typeof z === 'object' ? (z as Record<string, unknown>) : null))
+      .map((z) => (z ? { id: z.id, fee: z.fee, currency: z.currency === 'XOF' ? 'XOF' : 'EUR' } : null))
       .filter(
-        (z): z is { id: string; fee: number } =>
+        (z): z is { id: string; fee: number; currency: string } =>
           !!z &&
           typeof z.id === 'string' &&
           typeof z.fee === 'number' &&
           Number.isFinite(z.fee) &&
           z.fee >= 0 &&
-          z.fee <= 10000,
+          z.fee <= MAX[z.currency],
       )
-      .map((z) => [z.id, Math.round(z.fee * 100) / 100]),
+      .map((z) => [z.id, { fee: Math.round(z.fee * 100) / 100, currency: z.currency }]),
   );
   return Object.keys(fees).length > 0 ? fees : undefined;
 }

@@ -66,12 +66,13 @@ const FILTER_PHOTO: Record<string, { source: Photo; ratio: number }> = {
 const LEAF: Photo = require('../assets/decor/leaf.webp');
 
 /**
- * Illustration d'un rayon : une photo publiée par l'équipe (adresse) passe en premier ; sinon
- * l'illustration de l'application (design inchangé) ; pour un rayon créé dans la tour, le produit
- * illustrant qu'elle a choisi.
+ * Illustration d'un rayon : une photo publiée par l'équipe (adresse) passe en premier, puis le
+ * produit d'illustration choisi dans la tour ; sans tour, l'illustration de l'application.
  */
 function shelfPhoto(f: Shelf): { source: Photo; ratio: number } {
   if (f.image && !f.imageKey) return { source: f.image, ratio: 1 };
+  // Rayon publié par la tour avec son produit d'illustration : celui que l'équipe a choisi.
+  if (f.image && f.imageKey) return { source: f.image, ratio: RATIO[f.imageKey] ?? 1 };
   if (FILTER_PHOTO[f.id]) return FILTER_PHOTO[f.id];
   if (f.image) return { source: f.image, ratio: f.imageKey ? (RATIO[f.imageKey] ?? 1) : 1 };
   return { source: LEAF, ratio: 1 };

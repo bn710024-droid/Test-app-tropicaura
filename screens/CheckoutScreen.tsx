@@ -10,7 +10,7 @@ import { AddressSheet } from '../components/AddressSheet';
 import { Backdrop } from '../components/Backdrop';
 import { PrimaryButton, RoundButton } from '../components/Buttons';
 import { EmptyState } from '../components/EmptyState';
-import { countryName, transportFee, transportZone } from '../lib/countries';
+import { countryName, transportZone } from '../lib/countries';
 import { TEAM_ENDPOINT } from '../lib/config';
 import { euro, formatAddress, money, round2 } from '../lib/format';
 import { isPhone } from '../lib/identity';
@@ -126,17 +126,21 @@ export function CheckoutScreen() {
   const contactY = useRef(0);
 
   // Le transport est forfaitaire, selon le pays de destination. Sans transport, rien n'est ajouté.
-  const fee = address ? transportFee(address.country, transportFees) : null;
-  const transportCost = transport ? (fee ?? 0) : 0;
-  const total = round2(subtotal + transportCost);
+  const zone = address ? transportZone(address.country, transportFees) : null;
+  const fee = zone ? zone.fee : null;
+  // Devise du forfait : euro, ou franc CFA pour les zones qui paient en francs CFA.
+  const feeCurrency = zone?.currency ?? 'EUR';
   const destination = address ? countryName(address.country) : '';
   // Devises : on n'additionne jamais des montants de devises différentes, et aucune
   // conversion n'est inventée. Total incertain → paiement bloqué, l'équipe confirme.
   const currencies = totalsByCurrency.map((t) => t.currency);
   const singleCur =
     currencies.length === 1 ? currencies[0] : currencies.length === 0 ? 'EUR' : null;
-  const mixed = singleCur === null || (singleCur !== 'EUR' && transportCost > 0);
-  const payable = mixed ? 0 : singleCur === 'EUR' ? total : totalsByCurrency[0].amount;
+  const transportCost = transport ? (fee ?? 0) : 0;
+  // Un forfait d'une autre devise que le panier n'est jamais additionné : total à confirmer.
+  const mixed = singleCur === null || (transportCost > 0 && feeCurrency !== singleCur);
+  const goods = singleCur === 'EUR' ? subtotal : (totalsByCurrency[0]?.amount ?? 0);
+  const payable = mixed ? 0 : round2(goods + transportCost);
   const totalText = mixed ? 'À confirmer' : money(payable, singleCur ?? undefined);
   // Sénégal : livraison à domicile par nos livreurs (moto), coordonnée par notre équipe.
   const senegal = address?.country === 'SN';
@@ -391,7 +395,7 @@ export function CheckoutScreen() {
                     ? `Nous expédions du Sénégal jusqu’à votre adresse · ${destination}`
                     : 'Nous expédions du Sénégal jusqu’à votre adresse'
               }
-              price={fee == null ? 'Tarif selon le pays de destination' : `+ ${euro(fee)}`}
+              price={fee == null ? 'Tarif selon le pays de destination' : `+ ${money(fee, feeCurrency)}`}
               icon="airplane-outline"
               selected={transport}
               onPress={() => setTransport(true)}
@@ -602,7 +606,7 @@ export function CheckoutScreen() {
                   Transport{destination ? ` · ${destination}` : ''}
                 </Text>
                 <Text style={[styles.sumValue, fee == null && styles.sumMuted]}>
-                  {fee == null ? 'Selon le pays' : euro(fee)}
+                  {fee == null ? 'Selon le pays' : money(fee, feeCurrency)}
                 </Text>
               </Animated.View>
             )}

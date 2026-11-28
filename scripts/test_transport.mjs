@@ -37,7 +37,8 @@ test('sans forfaits publiés : barème de l’application', () => {
 });
 
 test('forfaits publiés : montant de la zone du pays', () => {
-  const fees = { sn: 5, eu: 45.5, monde: 0 };
+  const e = (fee) => ({ fee, currency: 'EUR' });
+  const fees = { sn: e(5), eu: e(45.5), monde: e(0) };
   assert.equal(transportFee('SN', fees), 5);
   assert.equal(transportFee('FR', fees), 45.5);
   assert.equal(transportFee('JP', fees), 0);
@@ -54,7 +55,17 @@ test('catalogue sans transport : rien de lu', () => {
 
 test('catalogue avec transport en euros : forfaits lus par zone', () => {
   const doc = parseCatalog({ ...fixture, transport: published });
-  assert.deepEqual(doc.transport, { sn: 5, ao: 20, af: 30, eu: 45.5, na: 60, monde: 0 });
+  const e = (fee) => ({ fee, currency: 'EUR' });
+  assert.deepEqual(doc.transport, { sn: e(5), ao: e(20), af: e(30), eu: e(45.5), na: e(60), monde: e(0) });
+});
+
+test('forfait du Sénégal en francs CFA : montant et devise gardés, sans conversion', () => {
+  const zones = published.zones.map((z) => (z.id === 'sn' ? { ...z, fee: 2500, currency: 'XOF' } : z));
+  const doc = parseCatalog({ ...fixture, transport: { ...published, zones } });
+  assert.deepEqual(doc.transport.sn, { fee: 2500, currency: 'XOF' });
+  assert.deepEqual(transportZone('SN', doc.transport).currency, 'XOF');
+  assert.equal(transportFee('SN', doc.transport), 2500);
+  assert.equal(transportZone('FR', doc.transport).currency, 'EUR');
 });
 
 test('autre devise ou montants illisibles : ignorés', () => {

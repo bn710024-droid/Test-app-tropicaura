@@ -743,8 +743,8 @@ export function ProductScreen() {
                 </View>
                 <Text style={styles.variety}>
                   {selFormat
-                    ? `${selFormat.label}${selFormat.grams ? ` · contient ${contentsText(selFormat.grams)}` : ''} · ${p.origin}`
-                    : `${p.variety} · ${p.origin}`}
+                    ? [selFormat.label + (selFormat.grams ? ` · contient ${contentsText(selFormat.grams)}` : ''), p.origin].filter(Boolean).join(' · ')
+                    : [p.variety, p.origin].filter(Boolean).join(' · ')}
                 </Text>
                 <View style={styles.priceRow}>
                   <Text style={styles.price}>{priceText(buy)}</Text>

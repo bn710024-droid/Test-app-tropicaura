@@ -258,14 +258,14 @@ export const countryName = (code: string) => NAME[code] ?? code;
 // Forfait par zone de destination, en euros. Réglé dans la tour (Réglages › Transport) et publié
 // dans le catalogue ; tant qu'il ne l'est pas, le barème d'exemple ci-dessous s'applique.
 
-export type TransportZone = { id: string; label: string; fee: number };
+export type TransportZone = { id: string; label: string; fee: number; currency: string };
 
-const SENEGAL: TransportZone = { id: 'sn', label: 'Sénégal', fee: 6 };
-const WEST_AFRICA: TransportZone = { id: 'ao', label: 'Afrique de l’Ouest', fee: 24 };
-const AFRICA: TransportZone = { id: 'af', label: 'Afrique', fee: 36 };
-const EUROPE: TransportZone = { id: 'eu', label: 'Europe', fee: 48 };
-const NORTH_AMERICA: TransportZone = { id: 'na', label: 'Amérique du Nord', fee: 62 };
-const WORLD: TransportZone = { id: 'monde', label: 'Reste du monde', fee: 78 };
+const SENEGAL: TransportZone = { id: 'sn', label: 'Sénégal', fee: 6, currency: 'EUR' };
+const WEST_AFRICA: TransportZone = { id: 'ao', label: 'Afrique de l’Ouest', fee: 24, currency: 'EUR' };
+const AFRICA: TransportZone = { id: 'af', label: 'Afrique', fee: 36, currency: 'EUR' };
+const EUROPE: TransportZone = { id: 'eu', label: 'Europe', fee: 48, currency: 'EUR' };
+const NORTH_AMERICA: TransportZone = { id: 'na', label: 'Amérique du Nord', fee: 62, currency: 'EUR' };
+const WORLD: TransportZone = { id: 'monde', label: 'Reste du monde', fee: 78, currency: 'EUR' };
 
 const set = (codes: string) => new Set(codes.split(' '));
 
@@ -278,8 +278,8 @@ const IN_EUROPE = set(
 );
 const IN_NORTH_AMERICA = set('US CA MX');
 
-/** Forfaits publiés par la tour, par zone (`{ sn: 6, … }`, en euros). */
-export type TransportFees = Readonly<Record<string, number>>;
+/** Forfaits publiés par la tour, par zone, avec leur devise (euro, ou franc CFA en Afrique de l'Ouest). */
+export type TransportFees = Readonly<Record<string, { fee: number; currency: string }>>;
 
 function zoneOf(country: string): TransportZone {
   if (country === 'SN') return SENEGAL;
@@ -292,8 +292,8 @@ function zoneOf(country: string): TransportZone {
 
 export function transportZone(country: string, fees?: TransportFees | null): TransportZone {
   const zone = zoneOf(country);
-  const fee = fees?.[zone.id];
-  return typeof fee === 'number' ? { ...zone, fee } : zone;
+  const own = fees?.[zone.id];
+  return own ? { ...zone, fee: own.fee, currency: own.currency } : zone;
 }
 
 export const transportFee = (country: string, fees?: TransportFees | null) =>

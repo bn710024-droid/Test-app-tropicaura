@@ -120,6 +120,9 @@ function mapFormat(f: CatalogFormat): ProductFormat {
  * global, jamais par kilo), la quantité est un nombre d'emballages avec ses propres
  * minimum, palier et maximum.
  */
+/** « Maximum vide : aucun maximum » (tour) : une borne haute qui ne gêne aucune commande réelle. */
+const PACK_NO_MAX = 9999;
+
 function formatLine(p: Product, f: ProductFormat): Product {
   return {
     ...p,
@@ -131,7 +134,8 @@ function formatLine(p: Product, f: ProductFormat): Product {
     noun: f.noun,
     step: f.step ?? 1,
     min: f.min ?? 1,
-    ...(f.max ? { max: f.max } : null),
+    // Sans maximum réglé dans la tour : aucun maximum (jamais celui du produit au détail).
+    max: f.max ?? PACK_NO_MAX,
     ...(f.currency ? { currency: f.currency } : null),
     formatId: f.id,
     formatLabel: f.label,
@@ -286,7 +290,8 @@ function line(
     shownPrice: o.shownPrice,
     shownUnit: o.shownUnit,
     containerKg: o.containerKg,
-    containerLabel: doc.rules.bateau.containerLabel,
+    // Poids propre à l'offre : ce n'est pas le conteneur de référence, aucune précision affichée.
+    containerLabel: offer.containerKg === undefined ? doc.rules.bateau.containerLabel : '',
   };
 }
 
@@ -318,7 +323,14 @@ export function wholesaleSpace(
       const source = offers.find((o) => o.priceUnit === 'kg' && o.prices[incoterm]) ?? offers[0];
       const only = line(
         p,
-        { mode: null, available: true, prices: source.prices, priceUnit: source.priceUnit },
+        {
+          mode: null,
+          available: true,
+          prices: source.prices,
+          priceUnit: source.priceUnit,
+          // Offre sans mode : ses propres minimum, palier et maximum (réglés dans la tour).
+          ...(source.mode == null ? { minQty: source.minQty, stepQty: source.stepQty, maxQty: source.maxQty } : null),
+        },
         doc,
         incoterm,
         p.id,
