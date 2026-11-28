@@ -91,6 +91,8 @@ export type ProductFormat = {
 
 export type Product = {
   id: string;
+  /** Particuliers : vendu uniquement par ses emballages (prix par zone) ; pas de « produit initial ». */
+  packed?: boolean;
   name: string;
   variety: string;
   category: CategoryId;

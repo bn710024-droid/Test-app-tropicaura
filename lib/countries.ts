@@ -258,7 +258,7 @@ export const countryName = (code: string) => NAME[code] ?? code;
 // Forfait par zone de destination, en euros. Réglé dans la tour (Réglages › Transport) et publié
 // dans le catalogue ; tant qu'il ne l'est pas, le barème d'exemple ci-dessous s'applique.
 
-export type TransportZone = { id: string; label: string; fee: number; currency: string };
+export type TransportZone = { id: string; label: string; fee: number | null; currency: string };
 
 const SENEGAL: TransportZone = { id: 'sn', label: 'Sénégal', fee: 6, currency: 'EUR' };
 const WEST_AFRICA: TransportZone = { id: 'ao', label: 'Afrique de l’Ouest', fee: 24, currency: 'EUR' };
@@ -279,7 +279,7 @@ const IN_EUROPE = set(
 const IN_NORTH_AMERICA = set('US CA MX');
 
 /** Forfaits publiés par la tour, par zone, avec leur devise (euro, ou franc CFA en Afrique de l'Ouest). */
-export type TransportFees = Readonly<Record<string, { fee: number; currency: string }>>;
+export type TransportFees = Readonly<Record<string, { XOF: number | null; EUR: number | null; USD: number | null }>>;
 
 function zoneOf(country: string): TransportZone {
   if (country === 'SN') return SENEGAL;
@@ -290,11 +290,23 @@ function zoneOf(country: string): TransportZone {
   return WORLD;
 }
 
-export function transportZone(country: string, fees?: TransportFees | null): TransportZone {
+/**
+ * Forfait vers ce pays, dans la devise du client (celle de son compte). `fee: null` : tarif à
+ * confirmer (aucun montant réglé dans cette devise). Sans forfaits publiés : le barème d'exemple,
+ * en euros seulement.
+ */
+export function transportZone(
+  country: string,
+  fees?: TransportFees | null,
+  currency: string = 'EUR',
+): TransportZone {
   const zone = zoneOf(country);
-  const own = fees?.[zone.id];
-  return own ? { ...zone, fee: own.fee, currency: own.currency } : zone;
+  if (fees) {
+    const own = fees[zone.id] as Record<string, number | null> | undefined;
+    return { ...zone, fee: own?.[currency] ?? null, currency };
+  }
+  return { ...zone, fee: currency === 'EUR' ? zone.fee : null, currency };
 }
 
-export const transportFee = (country: string, fees?: TransportFees | null) =>
-  transportZone(country, fees).fee;
+export const transportFee = (country: string, fees?: TransportFees | null, currency?: string) =>
+  transportZone(country, fees, currency).fee;

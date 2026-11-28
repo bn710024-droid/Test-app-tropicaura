@@ -110,7 +110,7 @@ export function ProfileScreen() {
     });
     if (!result.ok) return setErrors({ form: result.error });
     setEditing(false);
-    toast('Profil mis à jour');
+    toast(result.notice ?? 'Profil mis à jour');
   };
 
   return (

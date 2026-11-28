@@ -56,6 +56,7 @@ import {
 } from './transmission';
 import { PhotoPost, fetchPhotoPosts, postsFor } from './posts';
 import { buildCartPayload, useCartSync, type CartTime } from './cartSync';
+import { currencyOf } from './zones';
 import { REFRESH_MS, RETRY_MS, TEAM_ENDPOINT } from './config';
 import {
   DEMO_VIDEOS,
@@ -287,13 +288,14 @@ const usesModesFor = (account: Pick<Account, 'type' | 'activity'>) =>
 
 function spaceFor(
   doc: CatalogDocument,
-  account: Pick<Account, 'type' | 'activity'> | null,
+  account: (Pick<Account, 'type' | 'activity'> & { country?: string }) | null,
   incoterm: Incoterm,
   country: string | null,
 ): Space {
   // Prix par pays (`countryPrices` publiés par la tour) : chaque client voit le prix de son pays.
   const local = forCountry(doc, country);
-  if (account?.type !== 'pro') return retailSpace(local, country);
+  // Particuliers : la zone (devise, emballages proposés) est celle du pays du COMPTE.
+  if (account?.type !== 'pro') return retailSpace(local, country, account?.country || null);
   return wholesaleSpace(local, incoterm, usesModesFor(account), country);
 }
 
@@ -334,7 +336,7 @@ const isStatus = (s: unknown): s is StatusId =>
 /** Remet d'équerre des données lues sur l'appareil (y compris celles d'anciennes versions). */
 function sanitize(
   raw: unknown,
-  account: Pick<Account, 'type' | 'activity'>,
+  account: Pick<Account, 'type' | 'activity'> & { country?: string },
   doc: CatalogDocument,
 ): Persisted {
   const saved = (raw && typeof raw === 'object' ? raw : {}) as Partial<Persisted>;
@@ -513,7 +515,7 @@ const matches = (a: Account, identifier: string) => {
   return digits.length >= 8 && !!a.phone && phoneDigits(a.phone) === digits;
 };
 
-type Result = { ok: true } | { ok: false; error: string };
+type Result = { ok: true; notice?: string } | { ok: false; error: string };
 
 type Store = Persisted & {
   hydrated: boolean;
@@ -562,6 +564,8 @@ type Store = Persisted & {
   payments: readonly { id: string; title: string; detail: string; icon: string }[];
   /** Forfaits de transport publiés par la tour ; `null` : barème de l'application. */
   transportFees: TransportFees | null;
+  /** Devise des particuliers : celle de la zone du pays du compte (F CFA, €, $). */
+  clientCurrency: string;
   setIncoterm: (i: Incoterm) => void;
 
   toggleFavorite: (id: string) => boolean;
@@ -706,6 +710,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => watchCatalog(setCat), []);
 
   const accountType = account?.type ?? null;
+  const accountCountry = account?.country ?? '';
+  // Devise des particuliers : celle de la zone du pays du compte (F CFA, €, $).
+  const clientCurrency = useMemo(() => currencyOf(accountCountry, cat.doc.zones), [accountCountry, cat.doc]);
   const activity = account?.activity ?? null;
   const usesModes = !!account && usesModesFor(account);
   // Pays du client, dans tous les parcours : l'adresse de livraison le cas échéant, sinon
@@ -721,11 +728,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     () =>
       spaceFor(
         cat.doc,
-        accountType ? { type: accountType, activity } : null,
+        accountType ? { type: accountType, activity, country: accountCountry } : null,
         data.incoterm,
         clientCountry,
       ),
-    [cat.doc, accountType, activity, data.incoterm, clientCountry],
+    [cat.doc, accountType, activity, accountCountry, data.incoterm, clientCountry],
   );
   const catalog = space.catalog;
   const byId = space.byId;
@@ -900,6 +907,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       return { ok: false, error: 'Cet e-mail ou ce numéro est déjà utilisé par un autre compte.' };
     }
     setAuth((a) => ({ ...a, accounts: a.accounts.map((x) => (x.id === me.id ? next : x)) }));
+    // Nouveau pays : les prix changent de zone (et souvent de devise) — le panier est vidé.
+    if (next.country !== me.country && Object.keys(live.current.data.cart).length > 0) {
+      setData((d) => withCart(d, {}));
+      return { ok: true, notice: 'Votre pays a changé : votre panier a été vidé, les prix sont maintenant ceux de votre nouvelle zone.' };
+    }
     return { ok: true };
   }, []);
 
@@ -963,7 +975,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     (id) => {
       const found = live.current.byId[id];
       // Produit à plusieurs offres : le choix (avion ou bateau) se fait sur la fiche.
-      const product = found?.offers ? (found.offers.length === 1 ? found.offers[0] : null) : found;
+      const picked = found?.offers ? (found.offers.length === 1 ? found.offers[0] : null) : found;
+      // Produit emballé : jamais de « produit initial » — on ajoute son emballage par défaut.
+      const product = picked?.packed && picked.formats?.[0] ? live.current.byId[`${picked.id}:${picked.formats[0].id}`] : picked;
       if (!product) return null;
       const lineKey = product.id;
       const qty = (live.current.data.cart[lineKey] ?? 0) > 0 ? product.step : minQty(product);
@@ -1116,8 +1130,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       const currency = currencies.length === 1 ? currencies[0] : 'EUR';
       const adr = d.addresses.find((a) => a.id === d.addressId) ?? d.addresses[0];
       // Forfait dans une autre devise que la commande : jamais additionné (paiement bloqué avant).
-      const zone = adr ? transportZone(adr.country, live.current.transportFees) : null;
-      const transportCost = transport && zone && zone.currency === currency ? zone.fee : 0;
+      const zone = adr ? transportZone(adr.country, live.current.transportFees, currency) : null;
+      const transportCost = transport && zone && zone.fee !== null ? zone.fee : 0;
       const now = Date.now();
       const order: Order = {
         id: now.toString(36),
@@ -1411,6 +1425,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       shelves,
       payments,
       transportFees,
+      clientCurrency,
       productRequest,
       requestProduct,
       setIncoterm,
@@ -1460,6 +1475,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       shelves,
       payments,
       transportFees,
+      clientCurrency,
       productRequest,
       requestProduct,
       setIncoterm,

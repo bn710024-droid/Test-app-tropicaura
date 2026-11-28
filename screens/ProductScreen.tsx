@@ -321,6 +321,11 @@ export function ProductScreen() {
   const lastDragAt = useSharedValue(0);
   const rootRef = useRef<View>(null);
   const similarRef = useRef<View>(null);
+  // Rangée « Choisissez votre format » : elle défile seule. Un geste qui y commence ne change
+  // jamais de produit (doigt, souris, molette) — sa position dans le bloc est suivie ici.
+  const formatsRef = useRef<View>(null);
+  const formatsY = useSharedValue(0);
+  const formatsH = useSharedValue(0);
   const scrollRef = useRef<Animated.ScrollView | null>(null);
 
   // Aperçu du haut : chaque produit y paraît avec la photo « produit + emballage » de son
@@ -365,7 +370,17 @@ export function ProductScreen() {
     [count, dragW, progress, dragStart, lastDragAt],
   );
   const panStage = useMemo(makePan, [makePan]);
-  const panBody = useMemo(makePan, [makePan]);
+  const panBody = useMemo(
+    () =>
+      makePan().onTouchesDown((e, manager) => {
+        'worklet';
+        const t = e.allTouches[0];
+        if (t && formatsH.value > 0 && t.y >= formatsY.value && t.y <= formatsY.value + formatsH.value) {
+          manager.fail();
+        }
+      }),
+    [makePan, formatsY, formatsH],
+  );
 
   // Web : le glissement à deux doigts d'un pavé tactile (ou Maj + molette) n'émet pas de
   // « toucher » mais des événements de défilement horizontal. On les suit de la même façon :
@@ -394,6 +409,8 @@ export function ProductScreen() {
     const onWheel = (e: WheelEvent) => {
       const list = similarRef.current as unknown as HTMLElement | null;
       if (list && list.contains(e.target as Node)) return; // cette liste défile toute seule
+      const row = formatsRef.current as unknown as HTMLElement | null;
+      if (row && row.contains(e.target as Node)) return; // la rangée d'emballages aussi
       const unit = e.deltaMode === 1 ? 32 : 1;
       const dx = e.deltaX * unit;
       if (Math.abs(dx) <= Math.abs(e.deltaY * unit)) return; // vertical : la page défile
@@ -786,10 +803,18 @@ export function ProductScreen() {
                 <Text style={styles.description}>{p.description}</Text>
               </Animated.View>
 
-              {/* Choix de l'emballage : seulement si le produit en a d'actifs. Aucun n'est
-                  coché à l'ouverture ; « Produit initial » permet de revenir au produit nu. */}
+              {/* Choix de l'emballage : seulement si le produit en a d'actifs. Produit frais :
+                  aucun n'est coché, « Produit initial » revient au produit nu. Produit emballé :
+                  ouvert sur son emballage par défaut. */}
               {!isPro && (p.formats?.length ?? 0) > 0 && (
-                <View style={styles.formats}>
+                <View
+                  ref={formatsRef}
+                  style={styles.formats}
+                  onLayout={(e) => {
+                    formatsY.value = e.nativeEvent.layout.y;
+                    formatsH.value = e.nativeEvent.layout.height;
+                  }}
+                >
                   <FormatPicker
                     product={p}
                     selected={selFormat}

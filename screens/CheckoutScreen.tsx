@@ -86,6 +86,7 @@ export function CheckoutScreen() {
     delivery,
     payments,
     transportFees,
+    clientCurrency,
   } = useStore();
   const { top, bottom } = useFrame();
   const [transport, setTransport] = useState(true);
@@ -125,20 +126,22 @@ export function CheckoutScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const contactY = useRef(0);
 
-  // Le transport est forfaitaire, selon le pays de destination. Sans transport, rien n'est ajouté.
-  const zone = address ? transportZone(address.country, transportFees) : null;
-  const fee = zone ? zone.fee : null;
-  // Devise du forfait : euro, ou franc CFA pour les zones qui paient en francs CFA.
-  const feeCurrency = zone?.currency ?? 'EUR';
-  const destination = address ? countryName(address.country) : '';
   // Devises : on n'additionne jamais des montants de devises différentes, et aucune
   // conversion n'est inventée. Total incertain → paiement bloqué, l'équipe confirme.
   const currencies = totalsByCurrency.map((t) => t.currency);
   const singleCur =
-    currencies.length === 1 ? currencies[0] : currencies.length === 0 ? 'EUR' : null;
+    currencies.length === 1 ? currencies[0] : currencies.length === 0 ? clientCurrency : null;
+  // Le transport est forfaitaire, selon le pays de destination, dans la devise du panier (celle
+  // de la zone du compte pour les produits emballés). Sans transport, rien n'est ajouté.
+  const zone = address ? transportZone(address.country, transportFees, singleCur ?? clientCurrency) : null;
+  const fee = zone ? zone.fee : null;
+  const feeCurrency = zone?.currency ?? clientCurrency;
+  // Aucun montant réglé dans cette devise : tarif à confirmer, paiement en attente de l'équipe.
+  const feeUnknown = transport && !!address && fee === null;
+  const destination = address ? countryName(address.country) : '';
   const transportCost = transport ? (fee ?? 0) : 0;
   // Un forfait d'une autre devise que le panier n'est jamais additionné : total à confirmer.
-  const mixed = singleCur === null || (transportCost > 0 && feeCurrency !== singleCur);
+  const mixed = singleCur === null || feeUnknown || (transportCost > 0 && feeCurrency !== singleCur);
   const goods = singleCur === 'EUR' ? subtotal : (totalsByCurrency[0]?.amount ?? 0);
   const payable = mixed ? 0 : round2(goods + transportCost);
   const totalText = mixed ? 'À confirmer' : money(payable, singleCur ?? undefined);
@@ -146,7 +149,7 @@ export function CheckoutScreen() {
   const senegal = address?.country === 'SN';
   // Europe : GP — seules les modalités réellement configurées sont présentées.
   const gp = address ? delivery.gp.find((g) => g.country === address.country) : undefined;
-  const europe = address ? transportZone(address.country, transportFees).id === 'eu' : false;
+  const europe = address ? transportZone(address.country, transportFees, clientCurrency).id === 'eu' : false;
 
   const sharePosition = async () => {
     setLocating(true);
@@ -395,7 +398,7 @@ export function CheckoutScreen() {
                     ? `Nous expédions du Sénégal jusqu’à votre adresse · ${destination}`
                     : 'Nous expédions du Sénégal jusqu’à votre adresse'
               }
-              price={fee == null ? 'Tarif selon le pays de destination' : `+ ${money(fee, feeCurrency)}`}
+              price={fee == null ? (address ? 'Tarif à confirmer' : 'Tarif selon le pays de destination') : `+ ${money(fee, feeCurrency)}`}
               icon="airplane-outline"
               selected={transport}
               onPress={() => setTransport(true)}
@@ -606,7 +609,7 @@ export function CheckoutScreen() {
                   Transport{destination ? ` · ${destination}` : ''}
                 </Text>
                 <Text style={[styles.sumValue, fee == null && styles.sumMuted]}>
-                  {fee == null ? 'Selon le pays' : money(fee, feeCurrency)}
+                  {fee == null ? (address ? 'À confirmer' : 'Selon le pays') : money(fee, feeCurrency)}
                 </Text>
               </Animated.View>
             )}

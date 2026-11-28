@@ -1,3 +1,4 @@
+import { currencyOf, packsFor } from '../zones';
 import type { Campaign, CategoryId, Photo, Product, ProductFormat } from '../data';
 import { CAMPAIGN_ASSETS, FORMAT_ASSETS, PHOTO_ASSETS, PREVIEW_ASSETS } from './embedded';
 import { resolveOffer, resolveFormatsForCountry, visibleIn } from './rules';
@@ -240,16 +241,57 @@ export function allProducts(doc: CatalogDocument): Record<string, Product> {
  * Espace des particuliers : les produits qui ont un prix particulier et qui sont visibles
  * dans le pays du client (`country` null : pays encore inconnu, voir `visibleIn`).
  */
-export function retailSpace(doc: CatalogDocument, country: string | null): Space {
+export function retailSpace(
+  doc: CatalogDocument,
+  country: string | null,
+  zoneCountry: string | null = country,
+): Space {
   const products = doc.products.filter(
-    (p) => p.available && visibleIn(p.visibility, country) && p.retail && p.retail.price !== null,
+    (p) =>
+      p.available &&
+      visibleIn(p.visibility, country) &&
+      (p.b2c === 'emballe' || (p.retail && p.retail.price !== null)),
   );
-  // Deux disponibilités distinctes : le produit d'abord (filtré ci-dessus), puis ses
-  // emballages — seuls ceux actifs ET disponibles pour ce pays sont proposés.
-  const catalog = products.map((cp) => {
+  // Produit emballé : vendu uniquement par ses emballages, au prix de la zone du COMPTE du client
+  // (F CFA, €, $). Seuls les emballages qui ont un prix dans cette zone, et que leur réglage de
+  // pays permet, sont proposés ; le premier est celui par défaut. Sans emballage visible, le
+  // produit n'est pas proposé.
+  const currency = currencyOf(zoneCountry, doc.zones);
+  const catalog = products.flatMap((cp): Product[] => {
     const p = base(cp, doc);
+    if (cp.b2c === 'emballe') {
+      const packs = packsFor(cp.formats, zoneCountry, doc.zones).map((f) =>
+        mapFormat({
+          ...f,
+          price: f.prices?.[currency] ?? null,
+          currency,
+          unitLabel: `le ${f.noun[0]}${f.grams ? ` de ${contentsText(f.grams)}` : ''}`,
+        }),
+      );
+      if (packs.length === 0) return [];
+      const d = packs[0];
+      // La carte du Marché garde la photo du produit nu ; prix = celui de l'emballage par défaut.
+      return [
+        {
+          ...p,
+          packed: true,
+          formats: packs,
+          price: d.price ?? 0,
+          noPrice: d.price === null,
+          currency,
+          unit: 'unit',
+          unitLabel: d.unitLabel ?? '',
+          noun: d.noun,
+          step: d.step ?? 1,
+          min: d.min ?? 1,
+          max: d.max ?? 9999,
+        },
+      ];
+    }
+    // Deux disponibilités distinctes : le produit d'abord (filtré ci-dessus), puis ses
+    // emballages — seuls ceux actifs ET disponibles pour ce pays sont proposés.
     const resolved = resolveFormatsForCountry(cp.formats, country).map(mapFormat);
-    return resolved.length > 0 ? { ...p, formats: resolved } : { ...p, formats: undefined };
+    return [resolved.length > 0 ? { ...p, formats: resolved } : { ...p, formats: undefined }];
   });
   const byId: Record<string, Product> = Object.fromEntries(catalog.map((p) => [p.id, p]));
   // Une ligne commandable distincte par emballage proposé : « produit:emballage ». Le panier

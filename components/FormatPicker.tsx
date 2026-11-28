@@ -45,6 +45,10 @@ export function FormatPicker({ product, selected, onSelect }: Props) {
         accessibilityRole="radiogroup"
         accessibilityLabel={`Formats disponibles pour ${product.name}`}
       >
+        {/* Produit frais : le produit initial reste accessible (kilo ou pièce). Produit emballé :
+            il n'y a que ses emballages. */}
+        {!product.packed && (
+          <>
         {/* Le produit initial reste toujours accessible : il revient à l'aperçu et aux
             règles de vente configurés (kilo ou pièce). */}
         <PressableScale
@@ -86,6 +90,8 @@ export function FormatPicker({ product, selected, onSelect }: Props) {
           </View>
         </PressableScale>
 
+          </>
+        )}
         {formats.map((f) => {
           const on = f.id === selected?.id;
           return (

@@ -83,6 +83,12 @@ export type CatalogFormat = {
   visibility?: Visibility;
   /** Réglages propres à certains pays (dispo, prix, devise, photo). */
   settings?: FormatCountrySetting[];
+  /** Particuliers, produit emballé : prix de l'emballage entier par devise (null = non vendu dans cette zone). */
+  prices?: { XOF: number | null; EUR: number | null; USD: number | null };
+  /** Pays : toutes les zones avec un prix, seulement ces pays, ou sauf ces pays. */
+  countries?: { mode: 'zone' | 'pays' | 'sauf'; list: string[] };
+  /** Emballage sélectionné à l'ouverture de la fiche. */
+  isDefault?: boolean;
 };
 
 /** Offre aux particuliers (B2C). `null` sur un produit : il n'est pas vendu aux particuliers. */
@@ -189,6 +195,8 @@ export type CatalogProduct = {
   reviews: number;
   /** Vrai : ligne de démonstration, à remplacer par les données réelles. */
   demo: boolean;
+  /** Particuliers : 'emballe' = vendu uniquement par ses emballages, prix par zone. */
+  b2c?: 'emballe' | 'frais';
   retail: RetailOffer | null;
   wholesale: WholesaleOffer[];
   /** Conditionnements proposés aux particuliers ; liste vide : aucun. */
@@ -256,8 +264,10 @@ export type CatalogDocument = {
   payments?: CatalogPayment[];
   /** Message « Produit introuvable » (schema 2) ; absent : rien n'est proposé. */
   productRequest?: ProductRequestMessage | null;
-  /** Forfaits de transport par zone, avec leur devise (schema 2) ; absents : barème de l'application. */
-  transport?: Readonly<Record<string, { fee: number; currency: string }>>;
+  /** Forfaits de transport par zone de destination et par devise de client ; absents : barème de l'application. */
+  transport?: Readonly<Record<string, { XOF: number | null; EUR: number | null; USD: number | null }>>;
+  /** Pays du franc CFA et de l'euro (le reste : dollar), publiés par la tour. */
+  zones?: { XOF: string[]; EUR: string[] };
 };
 
 /** Valeurs de départ des règles (demandées pour les grossistes et importateurs). */
@@ -431,6 +441,23 @@ function parseFormat(raw: unknown): CatalogFormat | null {
     ...(max ? { max } : null),
     ...(unitLabel ? { unitLabel } : null),
     ...(previewPhoto ? { preview: previewPhoto } : null),
+    ...(o.prices && typeof o.prices === 'object'
+      ? (() => {
+          const pr = o.prices as Record<string, unknown>;
+          return { prices: { XOF: positive(pr.XOF), EUR: positive(pr.EUR), USD: positive(pr.USD) } };
+        })()
+      : null),
+    ...(o.countries && typeof o.countries === 'object'
+      ? (() => {
+          const c = o.countries as Record<string, unknown>;
+          const mode = c.mode === 'pays' || c.mode === 'sauf' ? c.mode : 'zone';
+          const list = (Array.isArray(c.list) ? c.list : [])
+            .map((x) => (typeof x === 'string' ? x.trim().toUpperCase() : ''))
+            .filter((x) => /^[A-Z]{2}$/.test(x));
+          return { countries: { mode, list } };
+        })()
+      : null),
+    ...(o.isDefault === true ? { isDefault: true } : null),
     ...(currency ? { currency } : null),
     ...(o.visibility ? { visibility: parseVisibility(o.visibility) } : null),
     ...(settings.length > 0 ? { settings } : null),
@@ -570,6 +597,7 @@ function parseProduct(raw: unknown): CatalogProduct | null {
     visibility: parseVisibility(p.visibility),
     bio: p.bio === true,
     demo: p.demo === true,
+    ...(p.b2c === 'emballe' ? { b2c: 'emballe' as const } : null),
     rating: typeof p.rating === 'number' ? p.rating : 0,
     reviews: typeof p.reviews === 'number' ? p.reviews : 0,
     retail: parseRetail(p.retail),
@@ -602,6 +630,9 @@ export function parseCatalog(raw: unknown): CatalogDocument | null {
   const payments = parsePayments(d.payments);
   const productRequest = parseProductRequest(d.productRequest);
   const transport = parseTransport(d.transport);
+  const zonesRaw = d.zones && typeof d.zones === 'object' ? (d.zones as Record<string, unknown>) : null;
+  const codes = (v: unknown) => (Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string' && /^[A-Z]{2}$/.test(x)) : []);
+  const zones = zonesRaw && codes(zonesRaw.XOF).length > 0 ? { XOF: codes(zonesRaw.XOF), EUR: codes(zonesRaw.EUR) } : undefined;
   return {
     schema: d.schema as SchemaVersion,
     updatedAt: text(d.updatedAt, new Date().toISOString()),
@@ -617,37 +648,41 @@ export function parseCatalog(raw: unknown): CatalogDocument | null {
     ...(payments ? { payments } : null),
     ...(productRequest !== undefined ? { productRequest } : null),
     ...(transport ? { transport } : null),
+    ...(zones ? { zones } : null),
   };
 }
 
 /**
- * Forfaits de transport : un montant par zone, en euros (0 à 10 000 €) ou en francs CFA
- * (0 à 10 000 000 F CFA). Jamais de conversion : la devise de la zone est gardée.
+ * Forfaits de transport par zone de destination : un montant par devise de client (F CFA, €, $),
+ * `null` = tarif à confirmer. Anciennes formes reprises : `currency: 'EUR'` (montant en euros),
+ * `'XOF+EUR'` (montant et devise par zone).
  */
 function parseTransport(
   raw: unknown,
-): Readonly<Record<string, { fee: number; currency: string }>> | undefined {
+): Readonly<Record<string, { XOF: number | null; EUR: number | null; USD: number | null }>> | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
   const o = raw as Record<string, unknown>;
-  // 'XOF+EUR' : certaines zones en francs CFA (chaque zone dit sa devise).
-  if ((o.currency !== 'EUR' && o.currency !== 'XOF+EUR') || !Array.isArray(o.zones)) return undefined;
-  const MAX: Record<string, number> = { EUR: 10000, XOF: 10000000 };
-  const fees = Object.fromEntries(
-    o.zones
-      .map((z) => (z && typeof z === 'object' ? (z as Record<string, unknown>) : null))
-      .map((z) => (z ? { id: z.id, fee: z.fee, currency: z.currency === 'XOF' ? 'XOF' : 'EUR' } : null))
-      .filter(
-        (z): z is { id: string; fee: number; currency: string } =>
-          !!z &&
-          typeof z.id === 'string' &&
-          typeof z.fee === 'number' &&
-          Number.isFinite(z.fee) &&
-          z.fee >= 0 &&
-          z.fee <= MAX[z.currency],
-      )
-      .map((z) => [z.id, { fee: Math.round(z.fee * 100) / 100, currency: z.currency }]),
-  );
-  return Object.keys(fees).length > 0 ? fees : undefined;
+  if (!['EUR', 'XOF+EUR', 'ZONES'].includes(String(o.currency)) || !Array.isArray(o.zones)) return undefined;
+  const MAX: Record<string, number> = { EUR: 10000, USD: 10000, XOF: 10000000 };
+  const ok = (v: unknown, c: string) => (typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= MAX[c] ? Math.round(v * 100) / 100 : null);
+  const out: Record<string, { XOF: number | null; EUR: number | null; USD: number | null }> = {};
+  for (const item of o.zones) {
+    if (!item || typeof item !== 'object') continue;
+    const z = item as Record<string, unknown>;
+    if (typeof z.id !== 'string') continue;
+    const fees = { XOF: null as number | null, EUR: null as number | null, USD: null as number | null };
+    if (z.fees && typeof z.fees === 'object') {
+      const f = z.fees as Record<string, unknown>;
+      fees.XOF = ok(f.XOF, 'XOF');
+      fees.EUR = ok(f.EUR, 'EUR');
+      fees.USD = ok(f.USD, 'USD');
+    } else {
+      const cur = z.currency === 'XOF' ? 'XOF' : 'EUR';
+      fees[cur] = ok(z.fee, cur);
+    }
+    if (fees.XOF !== null || fees.EUR !== null || fees.USD !== null) out[z.id] = fees;
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 function parsePhoto(raw: unknown): Photo | null {
