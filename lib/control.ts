@@ -38,8 +38,9 @@ export const CONTROL_LINKS: ControlLink[] = [
   },
   {
     id: 'demandes',
-    label: 'Demandes professionnelles',
-    scope: 'Réception des demandes des grossistes et importateurs par le logiciel de l’équipe.',
+    label: 'Commandes et demandes',
+    scope:
+      'Commandes des particuliers, demandes des grossistes et importateurs, produits introuvables, et suivi des statuts réglés par l’équipe.',
     endpoint: TEAM_ENDPOINT,
     connected: !!TEAM_ENDPOINT,
   },

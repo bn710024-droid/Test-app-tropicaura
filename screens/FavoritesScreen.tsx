@@ -6,6 +6,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { EmptyState } from '../components/EmptyState';
 import { PAGE_SCROLL } from '../components/PageSwipe';
 import { ProductCard } from '../components/ProductCard';
+import { PhotoPosts } from '../components/PhotoPosts';
 import { Reels } from '../components/Reels';
 import { TAB_BAR_SPACE } from '../components/TabBar';
 import { TabHeader } from '../components/TabHeader';
@@ -27,11 +28,14 @@ const VIEWS: { id: View_; label: string }[] = [
 
 export function FavoritesScreen() {
   const nav = useNavigation<Nav>();
-  const { favorites, cart, byId, isPro, tab, newVideoCount, toggleFavorite, addStep, setTab } =
+  const { favorites, cart, byId, isPro, tab, newVideoCount, posts, toggleFavorite, addStep, setTab } =
     useStore();
   const focused = useIsFocused();
   // Deux espaces dans l'onglet : les produits gardés, et les vidéos de l'équipe.
   const [view, setView] = useState<View_>('favoris');
+  // Dans Découvrir : les vidéos, ou les publications photo de l'équipe quand il y en a.
+  const [kind, setKind] = useState<'videos' | 'photos'>('videos');
+  const showPhotos = kind === 'photos' && posts.length > 0;
   const toast = useToast();
   const { width, top, bottom } = useFrame();
   const cardW = Math.floor((width - PAD * 2 - GAP) / 2);
@@ -121,14 +125,52 @@ export function FavoritesScreen() {
   // Découvrir : les vidéos de l'équipe, directement, en plein écran. Les deux boutons restent
   // en haut pour revenir aux favoris, et la barre de navigation reste utilisable en bas.
   if (view === 'decouvrir') {
+    // Le choix « Vidéos / Photos » n'apparaît que si l'équipe a publié des photos ; il reprend
+    // exactement le sélecteur « Mes favoris / Découvrir » (mêmes styles).
+    const kinds = posts.length > 0 && (
+      <View style={[styles.segments, { marginTop: 8 }]}>
+        {(['videos', 'photos'] as const).map((k) => {
+          const on = (showPhotos ? 'photos' : 'videos') === k;
+          return (
+            <Pressable
+              key={k}
+              onPress={() => {
+                if (on) return;
+                tick();
+                setKind(k);
+              }}
+              accessibilityRole="button"
+              accessibilityState={{ selected: on }}
+              aria-pressed={on}
+              accessibilityLabel={
+                k === 'videos' ? 'Vidéos' : `Photos, ${posts.length} publication${posts.length > 1 ? 's' : ''}`
+              }
+              style={({ pressed }) => [styles.segment, on && styles.segmentOn, pressed && { opacity: 0.7 }]}
+            >
+              <Text style={[styles.segmentText, on && styles.segmentTextOn]}>
+                {k === 'videos' ? 'Vidéos' : 'Photos'}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+    );
+    const offset = posts.length > 0 ? 54 : 0;
     return (
-      <View style={styles.reels}>
-        <Reels active={tab === 'favorites' && focused} top={top + 66} />
+      <View style={[styles.reels, showPhotos && { backgroundColor: C.bg }]}>
+        {showPhotos ? (
+          <PhotoPosts top={top + 78 + offset} />
+        ) : (
+          <Reels active={tab === 'favorites' && focused} top={top + 66 + offset} />
+        )}
         <LinearGradient
-          colors={['rgba(0,0,0,0.72)', 'rgba(0,0,0,0)']}
-          style={[styles.reelsShade, { height: top + 96 }]}
+          colors={showPhotos ? [C.bg, 'rgba(0,0,0,0)'] : ['rgba(0,0,0,0.72)', 'rgba(0,0,0,0)']}
+          style={[styles.reelsShade, { height: top + 96 + offset }]}
         />
-        <View style={[styles.reelsTop, { top: top + 8 }]}>{segments}</View>
+        <View style={[styles.reelsTop, { top: top + 8 }]}>
+          {segments}
+          {kinds}
+        </View>
       </View>
     );
   }

@@ -6,7 +6,9 @@ export type CategoryId =
   | 'legumes'
   | 'aromates'
   | 'seches'
-  | 'transformes';
+  | 'transformes'
+  // Rayon créé dans la tour de contrôle, inconnu du code : son nom vient du catalogue publié.
+  | (string & {});
 export type FilterId = 'tout' | 'saison' | CategoryId;
 
 export const FILTERS: { id: FilterId; label: string }[] = [
@@ -89,6 +91,8 @@ export type ProductFormat = {
 
 export type Product = {
   id: string;
+  /** Particuliers : vendu uniquement par ses emballages (prix par zone) ; pas de « produit initial ». */
+  packed?: boolean;
   name: string;
   variety: string;
   category: CategoryId;
@@ -1256,8 +1260,12 @@ export const WHOLESALE_EXAMPLE: {
  * L'application n'affiche que les annonces actives à la date courante.
  */
 export type Campaign = {
-  /** Produit concerné : le bandeau ouvre sa fiche. */
-  id: string;
+  /** Produit concerné : le bandeau ouvre sa fiche ; `null` : image seule, sans produit. */
+  id: string | null;
+  /** Identifiant de l'annonce dans la tour. */
+  key?: string;
+  /** Annonce illustrée : bouton (`button`), toucher l'image (`tap`) ou image seule (`none`). */
+  link?: 'button' | 'tap' | 'none';
   accent: string;
   body: string;
   /** Image de fond plein cadre du bandeau. */

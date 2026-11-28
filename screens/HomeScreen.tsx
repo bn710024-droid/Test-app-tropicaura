@@ -17,7 +17,9 @@ import { KeepsOwnSwipes, PAGE_SCROLL } from '../components/PageSwipe';
 import { PressableScale } from '../components/PressableScale';
 import { ProductCard } from '../components/ProductCard';
 import { TAB_BAR_SPACE } from '../components/TabBar';
-import { FILTERS, FilterId, PRODUCT_BY_ID, Photo, Product } from '../lib/data';
+import { FilterId, PRODUCT_BY_ID, Photo, Product } from '../lib/data';
+import type { Shelf } from '../lib/catalog/build';
+import { MissingProduct } from '../components/MissingProduct';
 import {
   MONTHS,
   addedMessage,
@@ -48,7 +50,7 @@ const SEASON_PHOTO =
 
 const photo = (id: string) => ({ source: PRODUCT_BY_ID[id].image, ratio: RATIO[id] ?? 1 });
 
-const FILTER_PHOTO: Record<FilterId, { source: Photo; ratio: number }> = {
+const FILTER_PHOTO: Record<string, { source: Photo; ratio: number }> = {
   tout: { source: require('../assets/categories/tout.webp'), ratio: 1.018 },
   saison: photo(SEASON_PHOTO),
   fruits: photo('pomme'),
@@ -60,6 +62,21 @@ const FILTER_PHOTO: Record<FilterId, { source: Photo; ratio: number }> = {
   transformes: photo('baobab'),
   aromates: photo('basilic'),
 };
+
+const LEAF: Photo = require('../assets/decor/leaf.webp');
+
+/**
+ * Illustration d'un rayon : une photo publiée par l'équipe (adresse) passe en premier, puis le
+ * produit d'illustration choisi dans la tour ; sans tour, l'illustration de l'application.
+ */
+function shelfPhoto(f: Shelf): { source: Photo; ratio: number } {
+  if (f.image && !f.imageKey) return { source: f.image, ratio: 1 };
+  // Rayon publié par la tour avec son produit d'illustration : celui que l'équipe a choisi.
+  if (f.image && f.imageKey) return { source: f.image, ratio: RATIO[f.imageKey] ?? 1 };
+  if (FILTER_PHOTO[f.id]) return FILTER_PHOTO[f.id];
+  if (f.image) return { source: f.image, ratio: f.imageKey ? (RATIO[f.imageKey] ?? 1) : 1 };
+  return { source: LEAF, ratio: 1 };
+}
 
 /** Taille d'affichage à « poids visuel » constant, quelle que soit la silhouette. */
 function photoSize(ratio: number) {
@@ -115,6 +132,7 @@ export function HomeScreen() {
     rules,
     usesModes,
     campaigns,
+    shelves,
     setTab,
   } = useStore();
   const toast = useToast();
@@ -151,7 +169,7 @@ export function HomeScreen() {
   // Seuls les rayons qui ont des produits dans cet espace sont proposés.
   const filters = useMemo(
     () =>
-      FILTERS.filter(
+      shelves.filter(
         (f) =>
           f.id === 'tout' ||
           (f.id === 'saison'
@@ -159,7 +177,7 @@ export function HomeScreen() {
             : // Pas de familles de produits dans l'espace professionnel.
               !isPro && catalog.some((p) => p.category === f.id)),
       ),
-    [catalog, isPro],
+    [catalog, isPro, shelves],
   );
 
   const list = useMemo(() => {
@@ -172,10 +190,20 @@ export function HomeScreen() {
     });
   }, [stall, filter, query]);
 
+  // La recherche ne donne rien dans tout l'espace (pas seulement dans le rayon ouvert).
+  const nowhere = useMemo(() => {
+    const q = normalize(query);
+    return !!q && !catalog.some((p) => normalize(`${p.name} ${p.variety} ${p.origin}`).includes(q));
+  }, [catalog, query]);
+
   const seasonal = useMemo(() => catalog.filter((p) => isInSeason(p) && !isAllYear(p)), [catalog]);
 
   // Annonces diffusées à la date courante : les éteintes ou périmées ne s'affichent pas.
-  const liveCampaigns = useMemo(() => campaigns.filter((c) => campaignActive(c)), [campaigns]);
+  // … et seulement pour un produit visible dans l'espace du client (catalogue publié).
+  const liveCampaigns = useMemo(
+    () => campaigns.filter((c) => campaignActive(c) && (c.id ? !!byId[c.id] : !!c.photo)),
+    [campaigns, byId],
+  );
 
   const open = useCallback(
     (id: string, fly?: boolean) => nav.navigate('Product', fly ? { id, fly: true } : { id }),
@@ -210,7 +238,7 @@ export function HomeScreen() {
     [addStep, byId, open, isPro, toast, setTab],
   );
 
-  const activeFilter = FILTERS.find((f) => f.id === filter)!;
+  const activeFilter = shelves.find((f) => f.id === filter) ?? shelves[0];
   const sectionTitle = searching
     ? 'Résultats'
     : filter === 'tout'
@@ -284,8 +312,8 @@ export function HomeScreen() {
             >
               <View style={[styles.filterIcon, on && styles.filterIconOn]}>
                 <Image
-                  source={FILTER_PHOTO[f.id].source}
-                  style={photoSize(FILTER_PHOTO[f.id].ratio)}
+                  source={shelfPhoto(f).source}
+                  style={photoSize(shelfPhoto(f).ratio)}
                   contentFit="contain"
                   accessible={false}
                 />
@@ -332,7 +360,12 @@ export function HomeScreen() {
               diffusion). Rien d'actif : aucun bandeau. */}
           {!searching && liveCampaigns.length > 0 && (
             <KeepsOwnSwipes style={styles.hero}>
-              <HomeHero width={width - PAD * 2} onOpen={open} campaigns={campaigns} />
+              <HomeHero
+                width={width - PAD * 2}
+                onOpen={open}
+                campaigns={liveCampaigns}
+                products={byId}
+              />
             </KeepsOwnSwipes>
           )}
         </>
@@ -421,7 +454,7 @@ export function HomeScreen() {
               title="Rien à ce nom-là"
               body={
                 searching
-                  ? `Aucun produit ne correspond à « ${query.trim()} » dans ce rayon. Essayez un autre mot ou parcourez tout l’étal.`
+                  ? `Aucun produit ne correspond à « ${query.trim()} »${filter === 'tout' ? '. Essayez un autre mot.' : ' dans ce rayon. Essayez un autre mot ou parcourez tout l’étal.'}`
                   : 'Ce rayon est vide pour le moment.'
               }
               cta="Voir tout l’étal"
@@ -430,6 +463,8 @@ export function HomeScreen() {
                 setFilter('tout');
               }}
             />
+            {/* Rien dans TOUT le catalogue : le client peut nous dire ce qu'il cherche. */}
+            {nowhere && <MissingProduct query={query.trim()} />}
           </View>
         }
       />

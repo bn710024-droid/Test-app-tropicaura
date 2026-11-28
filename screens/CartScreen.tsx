@@ -26,6 +26,7 @@ import {
 } from '../lib/format';
 import type { Nav } from '../lib/navigation';
 import { useStore } from '../lib/store';
+import { TEAM_ENDPOINT } from '../lib/config';
 import { C, F, PAD, R } from '../lib/theme';
 import { useToast } from '../lib/toast';
 import { useFrame } from '../lib/useFrame';
@@ -66,6 +67,11 @@ export function CartScreen() {
                 : undefined
             }
           />
+          {!!TEAM_ENDPOINT && (
+            <Text style={[styles.sumNote, { paddingHorizontal: PAD }]}>
+              Votre panier est visible par notre équipe, pour vous aider à finaliser votre commande.
+            </Text>
+          )}
         </View>
       }
       renderItem={({ item, index }) => {

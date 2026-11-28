@@ -4,7 +4,7 @@ import { Image } from 'expo-image';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { PressableScale } from './PressableScale';
 import type { Product, ProductFormat } from '../lib/data';
-import { money, priceText } from '../lib/format';
+import { contentsText, money, priceText } from '../lib/format';
 import { C, F, R } from '../lib/theme';
 import { tick } from '../lib/haptics';
 
@@ -45,6 +45,10 @@ export function FormatPicker({ product, selected, onSelect }: Props) {
         accessibilityRole="radiogroup"
         accessibilityLabel={`Formats disponibles pour ${product.name}`}
       >
+        {/* Produit frais : le produit initial reste accessible (kilo ou pièce). Produit emballé :
+            il n'y a que ses emballages. */}
+        {!product.packed && (
+          <>
         {/* Le produit initial reste toujours accessible : il revient à l'aperçu et aux
             règles de vente configurés (kilo ou pièce). */}
         <PressableScale
@@ -86,6 +90,8 @@ export function FormatPicker({ product, selected, onSelect }: Props) {
           </View>
         </PressableScale>
 
+          </>
+        )}
         {formats.map((f) => {
           const on = f.id === selected?.id;
           return (
@@ -101,7 +107,7 @@ export function FormatPicker({ product, selected, onSelect }: Props) {
               accessibilityState={{ selected: on }}
               aria-checked={on}
               accessibilityLabel={`${f.label}${f.detail ? ` ${f.detail}` : ''}${
-                f.grams ? `, contient ${f.grams} grammes` : ''
+                f.grams ? `, contient ${contentsText(f.grams)}` : ''
               }${f.price === null ? ', prix à compléter' : `, ${money(f.price, f.currency)} par ${f.noun[0]}`}`}
               style={[styles.card, scroll && styles.cardScroll, on && styles.cardOn]}
             >
@@ -140,7 +146,7 @@ export function FormatPicker({ product, selected, onSelect }: Props) {
                   <Text style={styles.price} numberOfLines={1}>
                     {money(f.price, f.currency)}
                     <Text style={styles.per}>
-                      {f.grams ? ` /\u00A0${f.grams}\u00A0g` : ` / ${f.noun[0]}`}
+                      {f.grams ? ` /\u00A0${contentsText(f.grams)}` : ` / ${f.noun[0]}`}
                     </Text>
                   </Text>
                 )}

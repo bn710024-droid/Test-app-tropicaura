@@ -15,6 +15,7 @@ import { countryName } from '../lib/countries';
 import { formatAddress, kgText } from '../lib/format';
 import { initials, isEmail, isPhone } from '../lib/identity';
 import type { Nav } from '../lib/navigation';
+import { TEAM_ENDPOINT } from '../lib/config';
 import { ACTIVITY_LABEL, useStore } from '../lib/store';
 import { C, F, PAD, R } from '../lib/theme';
 import { useToast } from '../lib/toast';
@@ -109,7 +110,7 @@ export function ProfileScreen() {
     });
     if (!result.ok) return setErrors({ form: result.error });
     setEditing(false);
-    toast('Profil mis à jour');
+    toast(result.notice ?? 'Profil mis à jour');
   };
 
   return (
@@ -318,16 +319,15 @@ export function ProfileScreen() {
             Vos données
           </Text>
           <Text style={styles.addressText}>
-            Prototype sans serveur : votre compte, vos favoris et vos{' '}
-            {isPro ? 'demandes' : 'commandes'} sont enregistrés sur cet appareil uniquement. Pour
-            les retrouver après une déconnexion, reconnectez-vous ici avec votre e-mail ou votre
-            numéro.
+            {TEAM_ENDPOINT
+              ? `Votre compte et vos favoris sont enregistrés sur cet appareil. Vos ${isPro ? 'demandes' : 'commandes'} sont transmises à notre équipe, qui en règle le suivi. Votre panier est visible par notre équipe, pour vous aider à finaliser votre commande. Pour les retrouver après une déconnexion, reconnectez-vous ici avec votre e-mail ou votre numéro.`
+              : `Prototype sans serveur : votre compte, vos favoris et vos ${isPro ? 'demandes' : 'commandes'} sont enregistrés sur cet appareil uniquement. Pour les retrouver après une déconnexion, reconnectez-vous ici avec votre e-mail ou votre numéro.`}
           </Text>
           <Text style={[styles.addressText, { marginTop: 10 }]}>
             {catalogOrigin === 'exemple'
               ? 'Catalogue : données d’exemple embarquées dans l’application. La base de contrôle de notre équipe n’est pas encore connectée ; les produits, prix et offres affichés sont à remplacer par les données réelles.'
               : catalogOrigin === 'base'
-                ? `Catalogue : reçu de la base de contrôle${catalogExample ? ' (données d’exemple)' : ''}.`
+                ? `Catalogue : reçu de la base de contrôle${catalogExample ? ' (données d’exemple)' : ''}, relu toutes les minutes.`
                 : 'Catalogue : dernière copie reçue, conservée sur cet appareil (réseau indisponible).'}
           </Text>
         </View>
@@ -338,9 +338,9 @@ export function ProfileScreen() {
             Tour de contrôle
           </Text>
           <Text style={styles.addressText}>
-            Raccordements préparés vers l’application de contrôle de notre équipe. Dès que leurs
-            adresses seront configurées, produits, emballages (carton, sachet, box, pot…), prix,
-            offres, règles et profils se régleront depuis là-bas, sans modifier l’application.
+            {TEAM_ENDPOINT
+              ? 'Reliée à la base de contrôle de notre équipe : produits, emballages, prix, rayons, annonces et statuts de vos commandes s’y règlent, relus toutes les minutes.'
+              : 'Raccordements préparés vers l’application de contrôle de notre équipe. Dès que leurs adresses seront configurées, produits, emballages (carton, sachet, box, pot…), prix, offres, règles et profils se régleront depuis là-bas, sans modifier l’application.'}
           </Text>
           {CONTROL_LINKS.map((l) => (
             <View key={l.id} style={styles.linkRow}>

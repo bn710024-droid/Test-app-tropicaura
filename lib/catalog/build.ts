@@ -1,6 +1,10 @@
+import { currencyOf, packsFor } from '../zones';
 import type { Campaign, CategoryId, Photo, Product, ProductFormat } from '../data';
 import { CAMPAIGN_ASSETS, FORMAT_ASSETS, PHOTO_ASSETS, PREVIEW_ASSETS } from './embedded';
 import { resolveOffer, resolveFormatsForCountry, visibleIn } from './rules';
+import { contentsText } from '../weight';
+import { CATEGORY_LABEL, FILTERS } from '../data';
+import type { FilterId } from '../data';
 import type {
   CatalogCampaign,
   CatalogDocument,
@@ -26,6 +30,52 @@ const CATEGORIES: CategoryId[] = [
   'seches',
   'transformes',
 ];
+
+/** Catégorie d'un produit : celle du catalogue si elle est connue (code ou rayons publiés). */
+function categoryOf(id: string, doc?: CatalogDocument): CategoryId {
+  if (CATEGORIES.includes(id as CategoryId)) return id as CategoryId;
+  if (doc?.categories?.some((c) => c.id === id)) return id;
+  return 'fruits';
+}
+
+/**
+ * Rayon de l'accueil (pastille ronde) : « Tout », « De saison », puis les rayons. `image` :
+ * photo publiée par la tour (ou produit illustrant) ; absente, l'accueil garde son illustration.
+ * `pro` faux : rayon masqué aux grossistes et importateurs.
+ */
+export type Shelf = { id: FilterId; label: string; image?: Photo; imageKey?: string; pro: boolean };
+
+function shelfImage(photo: { url: string } | { asset: string } | null | undefined) {
+  if (!photo) return {};
+  if ('url' in photo) return { image: { uri: photo.url } as Photo };
+  const local = PHOTO_ASSETS[photo.asset];
+  return local ? { image: local, imageKey: photo.asset } : {};
+}
+
+/**
+ * Rayons du catalogue publié (nom, ordre, image), sinon ceux de l'application. Les filtres
+ * « Tout » et « De saison » restent en tête, avec le nom réglé dans la tour s'il y en a un.
+ */
+export function shelvesOf(doc: CatalogDocument): Shelf[] {
+  if (!doc.categories || doc.categories.length === 0) {
+    return FILTERS.map((f) => ({ id: f.id, label: f.label, pro: true }));
+  }
+  return [
+    { id: 'tout', label: doc.filters?.all.label || 'Tout', ...shelfImage(doc.filters?.all.image), pro: true },
+    {
+      id: 'saison',
+      label: doc.filters?.season.label || 'De saison',
+      ...shelfImage(doc.filters?.season.image),
+      pro: true,
+    },
+    ...doc.categories.map((c) => ({
+      id: c.id,
+      label: c.label || CATEGORY_LABEL[c.id] || c.id,
+      ...shelfImage(c.image),
+      pro: c.pro,
+    })),
+  ];
+}
 
 const FALLBACK_PHOTO: Photo = require('../../assets/decor/leaf.webp');
 
@@ -71,6 +121,9 @@ function mapFormat(f: CatalogFormat): ProductFormat {
  * global, jamais par kilo), la quantité est un nombre d'emballages avec ses propres
  * minimum, palier et maximum.
  */
+/** « Maximum vide : aucun maximum » (tour) : une borne haute qui ne gêne aucune commande réelle. */
+const PACK_NO_MAX = 9999;
+
 function formatLine(p: Product, f: ProductFormat): Product {
   return {
     ...p,
@@ -78,11 +131,12 @@ function formatLine(p: Product, f: ProductFormat): Product {
     price: f.price ?? 0,
     noPrice: f.price === null,
     unit: 'unit',
-    unitLabel: f.unitLabel ?? `le ${f.noun[0]}${f.grams ? ` de ${f.grams} g` : ''}`,
+    unitLabel: f.unitLabel ?? `le ${f.noun[0]}${f.grams ? ` de ${contentsText(f.grams)}` : ''}`,
     noun: f.noun,
     step: f.step ?? 1,
     min: f.min ?? 1,
-    ...(f.max ? { max: f.max } : null),
+    // Sans maximum réglé dans la tour : aucun maximum (jamais celui du produit au détail).
+    max: f.max ?? PACK_NO_MAX,
     ...(f.currency ? { currency: f.currency } : null),
     formatId: f.id,
     formatLabel: f.label,
@@ -100,13 +154,13 @@ export const lineId = (productId: string, mode: Mode | null) =>
 export const productIdOf = (id: string) => id.split(':')[0];
 
 /** Informations communes à tous les espaces. Le prix et l'unité viennent ensuite de l'offre. */
-function base(p: CatalogProduct): Product {
+function base(p: CatalogProduct, doc?: CatalogDocument): Product {
   const retail = p.retail;
   return {
     id: p.id,
     name: p.name,
     variety: p.variety,
-    category: CATEGORIES.includes(p.category as CategoryId) ? (p.category as CategoryId) : 'fruits',
+    category: categoryOf(p.category, doc),
     origin: p.origin,
     price: retail?.price ?? 0,
     unit: retail?.unit ?? 'kg',
@@ -154,6 +208,8 @@ export function docCampaigns(doc: CatalogDocument): Campaign[] {
     const photo = campaignPhotoOf(c.photo);
     return {
       id: c.id,
+      ...(c.key ? { key: c.key } : null),
+      ...(c.link ? { link: c.link } : null),
       accent: c.accent,
       body: c.body,
       ...(c.kicker ? { kicker: c.kicker } : null),
@@ -176,23 +232,66 @@ export type Space = {
 
 /** Tous les produits disponibles, pour les affichages qui ne dépendent pas de l'espace. */
 export function allProducts(doc: CatalogDocument): Record<string, Product> {
-  return Object.fromEntries(doc.products.filter((p) => p.available).map((p) => [p.id, base(p)]));
+  return Object.fromEntries(
+    doc.products.filter((p) => p.available).map((p) => [p.id, base(p, doc)]),
+  );
 }
 
 /**
  * Espace des particuliers : les produits qui ont un prix particulier et qui sont visibles
  * dans le pays du client (`country` null : pays encore inconnu, voir `visibleIn`).
  */
-export function retailSpace(doc: CatalogDocument, country: string | null): Space {
+export function retailSpace(
+  doc: CatalogDocument,
+  country: string | null,
+  zoneCountry: string | null = country,
+): Space {
   const products = doc.products.filter(
-    (p) => p.available && visibleIn(p.visibility, country) && p.retail && p.retail.price !== null,
+    (p) =>
+      p.available &&
+      visibleIn(p.visibility, country) &&
+      (p.b2c === 'emballe' || (p.retail && p.retail.price !== null)),
   );
-  // Deux disponibilités distinctes : le produit d'abord (filtré ci-dessus), puis ses
-  // emballages — seuls ceux actifs ET disponibles pour ce pays sont proposés.
-  const catalog = products.map((cp) => {
-    const p = base(cp);
+  // Produit emballé : vendu uniquement par ses emballages, au prix de la zone du COMPTE du client
+  // (F CFA, €, $). Seuls les emballages qui ont un prix dans cette zone, et que leur réglage de
+  // pays permet, sont proposés ; le premier est celui par défaut. Sans emballage visible, le
+  // produit n'est pas proposé.
+  const currency = currencyOf(zoneCountry, doc.zones);
+  const catalog = products.flatMap((cp): Product[] => {
+    const p = base(cp, doc);
+    if (cp.b2c === 'emballe') {
+      const packs = packsFor(cp.formats, zoneCountry, doc.zones).map((f) =>
+        mapFormat({
+          ...f,
+          price: f.prices?.[currency] ?? null,
+          currency,
+          unitLabel: `le ${f.noun[0]}${f.grams ? ` de ${contentsText(f.grams)}` : ''}`,
+        }),
+      );
+      if (packs.length === 0) return [];
+      const d = packs[0];
+      // La carte du Marché garde la photo du produit nu ; prix = celui de l'emballage par défaut.
+      return [
+        {
+          ...p,
+          packed: true,
+          formats: packs,
+          price: d.price ?? 0,
+          noPrice: d.price === null,
+          currency,
+          unit: 'unit',
+          unitLabel: d.unitLabel ?? '',
+          noun: d.noun,
+          step: d.step ?? 1,
+          min: d.min ?? 1,
+          max: d.max ?? 9999,
+        },
+      ];
+    }
+    // Deux disponibilités distinctes : le produit d'abord (filtré ci-dessus), puis ses
+    // emballages — seuls ceux actifs ET disponibles pour ce pays sont proposés.
     const resolved = resolveFormatsForCountry(cp.formats, country).map(mapFormat);
-    return resolved.length > 0 ? { ...p, formats: resolved } : { ...p, formats: undefined };
+    return [resolved.length > 0 ? { ...p, formats: resolved } : { ...p, formats: undefined }];
   });
   const byId: Record<string, Product> = Object.fromEntries(catalog.map((p) => [p.id, p]));
   // Une ligne commandable distincte par emballage proposé : « produit:emballage ». Le panier
@@ -214,7 +313,7 @@ function line(
 ): Product {
   const o = resolveOffer(offer, doc.rules, incoterm);
   return {
-    ...base(p),
+    ...base(p, doc),
     id,
     productId: p.id,
     pro: true,
@@ -233,7 +332,8 @@ function line(
     shownPrice: o.shownPrice,
     shownUnit: o.shownUnit,
     containerKg: o.containerKg,
-    containerLabel: doc.rules.bateau.containerLabel,
+    // Poids propre à l'offre : ce n'est pas le conteneur de référence, aucune précision affichée.
+    containerLabel: offer.containerKg === undefined ? doc.rules.bateau.containerLabel : '',
   };
 }
 
@@ -265,7 +365,14 @@ export function wholesaleSpace(
       const source = offers.find((o) => o.priceUnit === 'kg' && o.prices[incoterm]) ?? offers[0];
       const only = line(
         p,
-        { mode: null, available: true, prices: source.prices, priceUnit: source.priceUnit },
+        {
+          mode: null,
+          available: true,
+          prices: source.prices,
+          priceUnit: source.priceUnit,
+          // Offre sans mode : ses propres minimum, palier et maximum (réglés dans la tour).
+          ...(source.mode == null ? { minQty: source.minQty, stepQty: source.stepQty, maxQty: source.maxQty } : null),
+        },
         doc,
         incoterm,
         p.id,

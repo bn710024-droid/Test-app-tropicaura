@@ -37,12 +37,15 @@ Ce fichier garde la trace de chaque passage de modifications. Nouvelles entrées
    kicker « Campagne à venir · dès … », titre serif + accent or italique, bouton « Voir … »,
    points de pagination). Les filtres de rayons sont montés tout en haut de l'accueil
    téléphone, juste sous la barre recherche/logo/panier.
-7. **Tour de contrôle** : raccordements préparés et indépendants dans `lib/config.ts`
-   (`CATALOG_ENDPOINT`, `TEAM_ENDPOINT`, `CONTROL_ENDPOINT`, `VIDEOS_ENDPOINT`, tous `null`
-   aujourd'hui) + état visible dans le Profil (carte « Tour de contrôle ») ; le catalogue
-   publié (`lib/catalog/schema.ts`, `schema: 1`) peut régler produits, photos, prix, unités,
-   offres, règles, **formats/emballages** et campagnes sans toucher aux écrans ; rien n'est
-   connecté ni testé contre un vrai serveur pour l'instant.
+7. **Tour de contrôle** : UNE adresse, `EXPO_PUBLIC_CONTROL_TOWER_URL` (`lib/config.ts` en
+   dérive tous les raccordements). L'app lit `<tour>/api/catalog?v=2` (`schema: 2`, format de
+   `lib/catalog/schema.ts` + `categories`, `filters`, `payments`, `productRequest`,
+   `countryPrices`, `transport`) à l'ouverture / 45 s (+ nouvel essai à 8 s) / premier plan ; envoie commandes, demandes pro,
+   introuvables (`/api/orders`) et réactions vidéo (`?public=reactions`) ; relit les statuts
+   (`/api/orders?compte=`). Sans adresse : catalogue d'exemple, rien n'est envoyé. Le correctif
+   `app-tropicaura.patch` de la tour est OBSOLÈTE : ne jamais l'appliquer.
+   Tests : `scripts/test_app.py` (sans tour) et `scripts/test_tower_live.py` (avec la tour
+   locale `npm run local`).
 8. **Honnêteté des données** : aucune donnée commerciale inventée sans être marquée
    (puce « Données de démonstration », note sous les formats, `example: true`, `demo: true`) ;
    aucun paiement / envoi réel présenté comme tel.
@@ -66,6 +69,144 @@ Ce fichier garde la trace de chaque passage de modifications. Nouvelles entrées
     « Valider pour un proche » (lien de localisation facultatif, sinon adresse + numéro) ;
     confirmation particulier : le téléphone suffit, e-mail facultatif. Suivi SN :
     « Livreur en route ».
+
+---
+
+## Passage 21 — 28 novembre 2026 : particuliers = produits emballés, prix par zone
+
+- **Zones et devises** (une seule source, tour `shared/zones.js`, copie de secours `lib/zones.ts`) :
+  F CFA (SN CI ML BF NE BJ TG GW), € (UE + GB CH NO IS LI MC AD SM VA ME XK), $ partout ailleurs
+  et pays inconnu. La devise vient du pays du COMPTE, jamais choisie à la main.
+- **Fiche tour** : type particuliers (Emballé / Frais) en tête, bloc Emballages après Identité,
+  grille de prix 3 colonnes (case vide = pas vendu dans cette zone), pays zone / seulement / sauf,
+  photo seule + photo produit dans l'emballage, emballage par défaut, alerte « devise inversée »,
+  aperçu SN / CI / FR / US / MA. Transport : 3 montants par zone.
+- **Migration en ligne** (liste validée avant) : 38 produits frais « Pour les particuliers »
+  désactivés (prix gardés) ; 4 séchés/transformés → emballés ; baobab « Sachet Sénégal »
+  2 500 F CFA (SN seulement) ; pot de bissap sans prix rendu inactif. Rien supprimé.
+- **App** : carte = produit nu au prix de l'emballage par défaut dans la devise du client ; fiche
+  ouverte sur l'emballage par défaut, plus de « Produit initial » ; panier, transport et commande
+  dans une seule devise ; changement de pays du compte → panier vidé avec message.
+- **Rangée d'emballages** : un glissement qui y commence ne change plus de produit (doigt, souris,
+  molette). Sur le web `manager.fail()` n'interrompait pas le geste : remplacé par un verrou.
+- **Tests** : `test_app.py` 63/63 ; en ligne `t7_b2c.py` 32/32 (comptes SN, FR, US ; produit et
+  emballages TEST supprimés, transport remis à sa valeur d'avant).
+
+---
+
+## Passage 20 — 28 novembre 2026 (nuit) : paniers en cours, audit de correspondance, tests sûrs
+
+**Demandes** : paniers en cours app → tour ; plus aucune remise à zéro globale (le propriétaire saisit
+de vraies données) ; audit de chaque champ tour → ?v=2 → app, test à la main d'un emballage, correction
+des « non ».
+
+**Fait**
+- Tests : journal ciblé (un réglage n'est remis que s'il n'a pas changé) ; t1/t3 refusés sur le
+  catalogue réel ; éléments TEST seulement, retirés un par un.
+- Paniers : horodatage des lignes, secret de compte, envoi de l'état complet (3 s / arrière-plan),
+  table `carts`, prix recalculés par la tour, page « Paniers » (filtres, tri, KPI par devise),
+  fiche avec relance WhatsApp / appel / e-mail, lien commande et client, tableau de bord.
+- Audit (`AUDIT.md` de la tour) : 98 champs ; corrigés — maximum d'emballage, devise F CFA (prix
+  par pays des emballages et forfait de transport), offre pro sans mode, référence du conteneur,
+  illustration des rayons, nom d'unité, « · » seul, surtitre/titre des annonces ; restants annoncés
+  dans la tour.
+
+**Vérifié** : t2 61/61 (paniers 19/19) · t6 (emballage à la main) 13/13 · test_app 63/63 · tests unitaires tour
+(paniers 12, catalogue 16, transport 10…) et app · revue de code : 0 critique, 0 majeur.
+
+**Reste** : t1 à réécrire sur des éléments TEST ; rapport des photos (carrousel) ; décisions :
+emballages pros, texte des annonces image, titre des vidéos.
+
+---
+
+## Passage 19 — 27 novembre 2026 (jour et soir) : mise en ligne, test complet, correctifs
+
+**Demande** : brancher Supabase + Vercel, remplir la base, test complet en ligne (tour → app,
+app → tour, statuts, chaque bouton), rendre les images à la tour, corriger les KO 1 à 5 ; puis,
+propriétaire absent : « fais tout pour que l'application soit prête ».
+
+**En ligne** : app https://tropicaura-app.vercel.app · tour https://tropicaura-tour.vercel.app ·
+Supabase (RLS, rôle serveur seul). Branche de production Vercel = `nuit-branchement` (à remettre
+sur `main` après fusion). PR n° 1 des deux dépôts ouvertes, non fusionnées.
+
+**Corrigé / ajouté**
+- Images de la tour revenues (liste des photos embarquées + 4 photos webp) ; photos des emballages
+  publiées (`format:<produit>:<emballage>`).
+- Annonces : « toucher l'image » (image seule, ouvre la fiche) et « image seule » sans produit.
+- Demandes pro : « Intérêt reçu », « Contacté », « En discussion » affichés au client.
+- Tour › Réglages : moyens de paiement (interrupteurs) et forfaits de transport par zone (en euros),
+  publiés dans `?v=2` ; l'app les applique, sinon son barème.
+- Publications photo : Favoris › Découvrir › Photos (1 à 10 photos, description, J'aime, commentaires).
+- Raté de statut (1 sur 14) : cause trouvée côté tour — la position du client réécrivait la commande
+  entière et effaçait un statut changé au même moment ; écritures conditionnelles.
+- Photos remplacées ou retirées dans la tour : fichier supprimé du stockage si plus rien ne le cite
+  (9 fichiers de test laissés par les passages précédents retirés à la main).
+- Identifiant de compte : 128 bits aléatoires. Relecture du catalogue 45 s + nouvel essai.
+
+**Vérifié (en ligne)** : t1 tour → app 81/81 · t2 app → tour + statuts 42/42 · t4 images 20/20 ·
+t5 transport 8/8 · t3 boutons 954 clics, 0 erreur. Hors ligne : `test_app.py` 63/63, `tsc` 0 erreur,
+tour `npm run build` OK, tests unitaires (contenus, catalogue v2, paiements, transport, empreinte).
+Revue de code des correctifs de concurrence et du transport : 0 critique, 0 majeur.
+
+**Reste** : voir `ERREURS.md` (app n° 4, 8, 9 ; tour n° 2, 4) ; vrais forfaits de transport à
+saisir par l'équipe.
+
+---
+
+## Passage 18 — nuit du 27 novembre 2026 : branchement réel sur la tour de contrôle
+
+**Demande** : brancher l'app sur la tour (catalogue v2, commandes, suivi, demandes pro,
+introuvables, annonces, publications), chasse aux erreurs, Vercel ; mode autonome. Travail sur la
+branche `nuit-branchement` (pas `main`). Décisions : `DECISIONS.md`. Réglages restants :
+`A-CONNECTER.md`. Ce qui reste à corriger : `ERREURS.md`.
+
+**Fait**
+- `lib/config.ts` : `CONTROL_TOWER` (variable `EXPO_PUBLIC_CONTROL_TOWER_URL`) → `CATALOG_ENDPOINT`
+  (`?v=2`), `TEAM_ENDPOINT`, `VIDEOS_ENDPOINT`, `REFRESH_MS = 60 s` ; `TEST_TOOLS = !CONTROL_TOWER`.
+- `lib/catalog/schema.ts` : `schema` 1 ou 2 ; `categories`, `filters`, `payments`,
+  `productRequest`, `countryPrices` (particuliers et pros) ; `forCountry()` applique le prix du
+  pays du client (adresse → compte → appareil).
+- `lib/catalog/source.ts` : `watchCatalog` (ouverture, 60 s, `AppState` actif), rendu seulement
+  si le document change, copie hors ligne ; panier relu contre la dernière copie au démarrage.
+- Rayons et filtres du document (nom, ordre, nouveaux rayons) ; illustrations de l'app gardées
+  sauf photo publiée par l'équipe (design inchangé).
+- Commandes particuliers → `POST /api/orders` (`type: 'commande'`, devise, position, pour un
+  proche) avec file locale (`transmitted: false`) et renvoi ; suivi `GET ?compte=` → statut,
+  date, messages ; demandes pro (format v2 existant) + étape en clair.
+- `components/MissingProduct.tsx` (repris du correctif, mêmes jetons de style) sous la recherche
+  quand rien n'est trouvé dans TOUT le catalogue → `produit_introuvable`.
+- Bandeau d'annonces construit sur les produits publiés ; paiements lus dans le catalogue ;
+  état vues/J'aime/commentaires envoyé à `?public=reactions` (sans le nom du compte).
+- Textes devenus faux corrigés (Profil « Vos données », Validation « aucune commande
+  transmise »), selon que la tour est branchée ou non.
+- Position pour le livreur rafraîchie tant que la tour renvoie `tracking: true` (sans redemander
+  l'accord) ; références de commande sur 6 caractères ; carte « Tour de contrôle » du Profil
+  exacte ; `DesktopHero` sur les annonces publiées.
+- `vercel.json` (build, `no-store`, `immutable`) ; ESLint (`expo lint`) configuré, 0 erreur.
+- Côté tour (même branche) : `?v=2`, pays GP, devise des commandes (F CFA), statistiques sans
+  mélange de devises, libellé « par cagette de 5 kg », textes faux corrigés, `npm run local`.
+
+**Testé réellement** (navigateur Chromium via Playwright, contre la tour LOCALE — base simulée)
+- `npx tsc --noEmit` : 0 erreur. `npx expo export --platform web` : OK.
+- `scripts/test_app.py` (export sans tour, 390×844) : **63/63**.
+- `scripts/test_tower_live.py` (390×844) : **36/36** — prix modifié + produit masqué +
+  emballage ajouté dans la tour visibles en 53–55 s sans recharger (« 14,50 € par cagette de
+  5 kg ») ; prix Sénégal (`countryPrices`) ; annonce publiée puis retirée ; introuvable reçu ;
+  commande reçue (lignes, devise, position) → paiement pointé → « Validée » dans l'app en
+  42–46 s ; position du livreur rafraîchie sans nouvel accord ; commande passée pendant une
+  coupure réseau → gardée puis renvoyée en ~50 s ; GP France proposé à la validation ; demande
+  pro → « Contrat conclu » → « Confirmée ».
+- Relevé d'erreurs (`hunt_errors.py` : ~50 écrans ; `hunt_interactions.py` : ~35 gestes —
+  favoris, Découvrir, profil, adresse, commande pour un proche, crédits, déconnexion /
+  reconnexion ; tour : fiche modifiée et enregistrée via l'interface, rayon, annonce, prix,
+  livraison, introuvables) à 390×844 et 1440×900 : **0 erreur console / page / réseau**.
+
+**Non testé** : sur téléphone (iOS / Android) ; contre la vraie base Supabase (aucune clé sur
+le poste) ; déploiement Vercel (aucun projet créé).
+
+**Restant** : voir `ERREURS.md` (photos d'emballage, forfait
+transport codé en dur, messages de suivi non affichés, publications photo, identifiant de compte
+prévisible…) et `A-CONNECTER.md` (Supabase, variable de la tour, identité EAS).
 
 ---
 

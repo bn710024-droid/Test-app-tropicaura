@@ -19,6 +19,10 @@ export const euro = (n: number) => {
 export const money = (n: number, currency?: string) => {
   if (!currency || currency === 'EUR') return euro(n);
   if (currency === 'XOF' || currency === 'XAF') return `${group(String(Math.round(n)))}\u00A0F\u00A0CFA`;
+  if (currency === 'USD') {
+    const [whole, cents] = n.toFixed(2).split('.');
+    return `${group(whole)},${cents} $`;
+  }
   return `${group(n.toFixed(2))}\u00A0${currency}`;
 };
 
@@ -227,13 +231,14 @@ export function inCartLabel(p: Product, cart: Record<string, number>) {
  */
 export function selectedFormat(p: Product, formats: Record<string, string>): ProductFormat | null {
   const id = formats[p.id];
-  if (!id) return null;
-  return (p.formats ?? []).find((f) => f.id === id) ?? null;
+  const found = id ? (p.formats ?? []).find((f) => f.id === id) : undefined;
+  if (found) return found;
+  // Produit emballé : jamais de « produit initial » ; l'emballage par défaut (le premier) est choisi.
+  return p.packed ? ((p.formats ?? [])[0] ?? null) : null;
 }
 
-/** Contenu total d'un nombre d'emballages : « 10 kg », « 400 g ». */
-export const contentsText = (grams: number) =>
-  grams >= 1000 ? kgText(grams / 1000) : `${grams}\u00A0g`;
+/** Contenu d'un ou plusieurs emballages : « 10 kg », « 1,5 kg », « 400 g ». */
+export { contentsText } from './weight';
 
 /**
  * État de diffusion d'une annonce : affichée seulement si l'équipe l'a activée ET si la

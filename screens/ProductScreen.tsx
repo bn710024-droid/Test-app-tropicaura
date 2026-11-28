@@ -176,6 +176,7 @@ export function ProductScreen() {
     setTab,
     formats,
     setFormat,
+    shelves,
   } = useStore();
   const first = byId[params.id] ?? catalog[0];
   // L'anneau parcouru en glissant, en boucle, depuis le produit ouvert : tout le catalogue de
@@ -320,6 +321,11 @@ export function ProductScreen() {
   const lastDragAt = useSharedValue(0);
   const rootRef = useRef<View>(null);
   const similarRef = useRef<View>(null);
+  // Rangée « Choisissez votre format » : elle défile seule. Un geste qui y commence ne change
+  // jamais de produit (doigt, souris, molette) — sa position dans le bloc est suivie ici.
+  const formatsRef = useRef<View>(null);
+  const formatsY = useSharedValue(0);
+  const formatsH = useSharedValue(0);
   const scrollRef = useRef<Animated.ScrollView | null>(null);
 
   // Aperçu du haut : chaque produit y paraît avec la photo « produit + emballage » de son
@@ -336,23 +342,37 @@ export function ProductScreen() {
 
   // Le même geste est posé sur deux zones : le visuel et le bloc d'informations.
   // On glisse donc n'importe où sur la fiche (hors liste « Dans le même rayon »).
+  // Un geste commencé sur la rangée d'emballages est verrouillé : il ne déplace jamais le
+  // carrousel (sur le web, `manager.fail()` n'interrompt pas le geste ; le verrou, si).
+  const rowLock = useSharedValue(false);
   const makePan = useCallback(
-    () =>
+    (onRow: boolean) =>
       Gesture.Pan()
         .enabled(count > 1)
         .activeOffsetX([-10, 10])
         .failOffsetY([-14, 14])
+        .onTouchesDown((e, manager) => {
+          'worklet';
+          const t = e.allTouches[0];
+          const inRow =
+            onRow && !!t && formatsH.value > 0 && t.y >= formatsY.value && t.y <= formatsY.value + formatsH.value;
+          rowLock.value = inRow;
+          if (inRow) manager.fail();
+        })
         .onStart(() => {
           'worklet';
+          if (rowLock.value) return;
           cancelAnimation(progress);
           dragStart.value = progress.value;
         })
         .onUpdate((e) => {
           'worklet';
+          if (rowLock.value) return;
           progress.value = dragStart.value - e.translationX / dragW;
         })
         .onEnd((e) => {
           'worklet';
+          if (rowLock.value) return;
           // On prolonge un peu le geste selon sa vitesse, puis on se cale sur un produit
           // (au plus un cran au-delà de celui qui est sous le doigt).
           const near = Math.round(progress.value);
@@ -361,10 +381,10 @@ export function ProductScreen() {
           lastDragAt.value = Date.now();
           progress.value = withSpring(target, { ...SNAP, velocity: -e.velocityX / dragW });
         }),
-    [count, dragW, progress, dragStart, lastDragAt],
+    [count, dragW, progress, dragStart, lastDragAt, formatsY, formatsH, rowLock],
   );
-  const panStage = useMemo(makePan, [makePan]);
-  const panBody = useMemo(makePan, [makePan]);
+  const panStage = useMemo(() => makePan(false), [makePan]);
+  const panBody = useMemo(() => makePan(true), [makePan]);
 
   // Web : le glissement à deux doigts d'un pavé tactile (ou Maj + molette) n'émet pas de
   // « toucher » mais des événements de défilement horizontal. On les suit de la même façon :
@@ -393,6 +413,8 @@ export function ProductScreen() {
     const onWheel = (e: WheelEvent) => {
       const list = similarRef.current as unknown as HTMLElement | null;
       if (list && list.contains(e.target as Node)) return; // cette liste défile toute seule
+      const row = formatsRef.current as unknown as HTMLElement | null;
+      if (row && row.contains(e.target as Node)) return; // la rangée d'emballages aussi
       const unit = e.deltaMode === 1 ? 32 : 1;
       const dx = e.deltaX * unit;
       if (Math.abs(dx) <= Math.abs(e.deltaY * unit)) return; // vertical : la page défile
@@ -716,7 +738,10 @@ export function ProductScreen() {
                   )
                 ) : (
                   <View style={styles.chip}>
-                    <Text style={styles.chipText}>{CATEGORY_LABEL[p.category]}</Text>
+                    <Text style={styles.chipText}>
+                      {shelves.find((s) => s.id === p.category)?.label ??
+                        CATEGORY_LABEL[p.category]}
+                    </Text>
                   </View>
                 )}
               </Animated.View>
@@ -739,8 +764,8 @@ export function ProductScreen() {
                 </View>
                 <Text style={styles.variety}>
                   {selFormat
-                    ? `${selFormat.label}${selFormat.grams ? ` · contient ${selFormat.grams} g` : ''} · ${p.origin}`
-                    : `${p.variety} · ${p.origin}`}
+                    ? [selFormat.label + (selFormat.grams ? ` · contient ${contentsText(selFormat.grams)}` : ''), p.origin].filter(Boolean).join(' · ')
+                    : [p.variety, p.origin].filter(Boolean).join(' · ')}
                 </Text>
                 <View style={styles.priceRow}>
                   <Text style={styles.price}>{priceText(buy)}</Text>
@@ -752,7 +777,7 @@ export function ProductScreen() {
                 </View>
                 {selFormat?.grams ? (
                   <Text style={styles.contents}>
-                    Contenu : {selFormat.grams} g par {selFormat.noun[0]} · contenu total{' '}
+                    Contenu : {contentsText(selFormat.grams)} par {selFormat.noun[0]} · contenu total{' '}
                     {contentsText(selFormat.grams * qty)}
                   </Text>
                 ) : null}
@@ -782,10 +807,18 @@ export function ProductScreen() {
                 <Text style={styles.description}>{p.description}</Text>
               </Animated.View>
 
-              {/* Choix de l'emballage : seulement si le produit en a d'actifs. Aucun n'est
-                  coché à l'ouverture ; « Produit initial » permet de revenir au produit nu. */}
+              {/* Choix de l'emballage : seulement si le produit en a d'actifs. Produit frais :
+                  aucun n'est coché, « Produit initial » revient au produit nu. Produit emballé :
+                  ouvert sur son emballage par défaut. */}
               {!isPro && (p.formats?.length ?? 0) > 0 && (
-                <View style={styles.formats}>
+                <View
+                  ref={formatsRef}
+                  style={styles.formats}
+                  onLayout={(e) => {
+                    formatsY.value = e.nativeEvent.layout.y;
+                    formatsH.value = e.nativeEvent.layout.height;
+                  }}
+                >
                   <FormatPicker
                     product={p}
                     selected={selFormat}

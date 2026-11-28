@@ -10,8 +10,8 @@ import { AddressSheet } from '../components/AddressSheet';
 import { Backdrop } from '../components/Backdrop';
 import { PrimaryButton, RoundButton } from '../components/Buttons';
 import { EmptyState } from '../components/EmptyState';
-import { countryName, transportFee, transportZone } from '../lib/countries';
-import { PAYMENTS } from '../lib/data';
+import { countryName, transportZone } from '../lib/countries';
+import { TEAM_ENDPOINT } from '../lib/config';
 import { euro, formatAddress, money, round2 } from '../lib/format';
 import { isPhone } from '../lib/identity';
 import { LocateError, locateCoords } from '../lib/locate';
@@ -74,8 +74,20 @@ function Option({
 
 export function CheckoutScreen() {
   const nav = useNavigation<Nav>();
-  const { account, cartLines, subtotal, totalsByCurrency, address, contact, placeOrder, setTab, delivery } =
-    useStore();
+  const {
+    account,
+    cartLines,
+    subtotal,
+    totalsByCurrency,
+    address,
+    contact,
+    placeOrder,
+    setTab,
+    delivery,
+    payments,
+    transportFees,
+    clientCurrency,
+  } = useStore();
   const { top, bottom } = useFrame();
   const [transport, setTransport] = useState(true);
   // Sénégal : position partagée POUR LE LIVREUR, uniquement après accord explicite.
@@ -85,7 +97,7 @@ export function CheckoutScreen() {
   const [coordsNote, setCoordsNote] = useState<string | null>(null);
   const [locating, setLocating] = useState(false);
   const [locAsked, setLocAsked] = useState(false);
-  const [paymentId, setPaymentId] = useState<string>(PAYMENTS[0].id);
+  const [paymentId, setPaymentId] = useState<string>(payments[0].id);
   const [email, setEmail] = useState(contact.email || account?.email || '');
   const [phone, setPhone] = useState(contact.phone || account?.phone || '');
   const [note, setNote] = useState('');
@@ -114,24 +126,30 @@ export function CheckoutScreen() {
   const scrollRef = useRef<ScrollView>(null);
   const contactY = useRef(0);
 
-  // Le transport est forfaitaire, selon le pays de destination. Sans transport, rien n'est ajouté.
-  const fee = address ? transportFee(address.country) : null;
-  const transportCost = transport ? (fee ?? 0) : 0;
-  const total = round2(subtotal + transportCost);
-  const destination = address ? countryName(address.country) : '';
   // Devises : on n'additionne jamais des montants de devises différentes, et aucune
   // conversion n'est inventée. Total incertain → paiement bloqué, l'équipe confirme.
   const currencies = totalsByCurrency.map((t) => t.currency);
   const singleCur =
-    currencies.length === 1 ? currencies[0] : currencies.length === 0 ? 'EUR' : null;
-  const mixed = singleCur === null || (singleCur !== 'EUR' && transportCost > 0);
-  const payable = mixed ? 0 : singleCur === 'EUR' ? total : totalsByCurrency[0].amount;
+    currencies.length === 1 ? currencies[0] : currencies.length === 0 ? clientCurrency : null;
+  // Le transport est forfaitaire, selon le pays de destination, dans la devise du panier (celle
+  // de la zone du compte pour les produits emballés). Sans transport, rien n'est ajouté.
+  const zone = address ? transportZone(address.country, transportFees, singleCur ?? clientCurrency) : null;
+  const fee = zone ? zone.fee : null;
+  const feeCurrency = zone?.currency ?? clientCurrency;
+  // Aucun montant réglé dans cette devise : tarif à confirmer, paiement en attente de l'équipe.
+  const feeUnknown = transport && !!address && fee === null;
+  const destination = address ? countryName(address.country) : '';
+  const transportCost = transport ? (fee ?? 0) : 0;
+  // Un forfait d'une autre devise que le panier n'est jamais additionné : total à confirmer.
+  const mixed = singleCur === null || feeUnknown || (transportCost > 0 && feeCurrency !== singleCur);
+  const goods = singleCur === 'EUR' ? subtotal : (totalsByCurrency[0]?.amount ?? 0);
+  const payable = mixed ? 0 : round2(goods + transportCost);
   const totalText = mixed ? 'À confirmer' : money(payable, singleCur ?? undefined);
   // Sénégal : livraison à domicile par nos livreurs (moto), coordonnée par notre équipe.
   const senegal = address?.country === 'SN';
   // Europe : GP — seules les modalités réellement configurées sont présentées.
   const gp = address ? delivery.gp.find((g) => g.country === address.country) : undefined;
-  const europe = address ? transportZone(address.country).id === 'eu' : false;
+  const europe = address ? transportZone(address.country, transportFees, clientCurrency).id === 'eu' : false;
 
   const sharePosition = async () => {
     setLocating(true);
@@ -196,7 +214,7 @@ export function CheckoutScreen() {
       warn();
       return;
     }
-    const payment = PAYMENTS.find((p) => p.id === paymentId) ?? PAYMENTS[0];
+    const payment = payments.find((p) => p.id === paymentId) ?? payments[0];
     sending.current = true;
     setBusy(true);
     // Aucun prestataire de paiement n'est branché : cette courte attente tient lieu de réponse.
@@ -380,7 +398,7 @@ export function CheckoutScreen() {
                     ? `Nous expédions du Sénégal jusqu’à votre adresse · ${destination}`
                     : 'Nous expédions du Sénégal jusqu’à votre adresse'
               }
-              price={fee == null ? 'Tarif selon le pays de destination' : `+ ${euro(fee)}`}
+              price={fee == null ? (address ? 'Tarif à confirmer' : 'Tarif selon le pays de destination') : `+ ${money(fee, feeCurrency)}`}
               icon="airplane-outline"
               selected={transport}
               onPress={() => setTransport(true)}
@@ -512,15 +530,19 @@ export function CheckoutScreen() {
             Paiement
           </Text>
           <Text style={styles.sectionHint}>
-            Vous réglez maintenant, à la confirmation de la commande.
+            {TEAM_ENDPOINT
+              ? 'Choisissez votre moyen de paiement : notre équipe confirme la commande dès réception.'
+              : 'Vous réglez maintenant, à la confirmation de la commande.'}
           </Text>
           <View accessibilityRole="radiogroup" style={[styles.group, { marginTop: 12 }]}>
-            {PAYMENTS.map((p) => (
+            {payments.map((p) => (
               <Option
                 key={p.id}
                 title={p.title}
                 detail={p.detail}
-                icon={p.icon}
+                icon={
+                  (p.icon in Ionicons.glyphMap ? p.icon : 'card-outline') as keyof typeof Ionicons.glyphMap
+                }
                 selected={paymentId === p.id}
                 onPress={() => setPaymentId(p.id)}
               />
@@ -587,7 +609,7 @@ export function CheckoutScreen() {
                   Transport{destination ? ` · ${destination}` : ''}
                 </Text>
                 <Text style={[styles.sumValue, fee == null && styles.sumMuted]}>
-                  {fee == null ? 'Selon le pays' : euro(fee)}
+                  {fee == null ? (address ? 'À confirmer' : 'Selon le pays') : money(fee, feeCurrency)}
                 </Text>
               </Animated.View>
             )}
@@ -621,8 +643,9 @@ export function CheckoutScreen() {
           <View style={styles.demo}>
             <Ionicons name="information-circle-outline" size={17} color={C.textDim} />
             <Text style={styles.demoText}>
-              Application de démonstration : aucun paiement n’est prélevé, aucun message n’est
-              réellement envoyé et aucune commande n’est transmise.
+              {TEAM_ENDPOINT
+                ? 'Aucun paiement n’est prélevé par l’application : votre commande est transmise à notre équipe, qui la confirme dès réception de votre paiement.'
+                : 'Application de démonstration : aucun paiement n’est prélevé, aucun message n’est réellement envoyé et aucune commande n’est transmise.'}
             </Text>
           </View>
         </ScrollView>

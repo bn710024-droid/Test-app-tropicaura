@@ -15,7 +15,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         pass
 
 socketserver.TCPServer.allow_reuse_address = True
-httpd = socketserver.TCPServer(('127.0.0.1', 8899), Handler)
+httpd = socketserver.ThreadingTCPServer(('127.0.0.1', 8899), Handler)
 threading.Thread(target=httpd.serve_forever, daemon=True).start()
 
 RESULTS = []
@@ -187,7 +187,7 @@ with sync_playwright() as pw:
     after_pot = page.evaluate("Math.max(0, ...[...document.querySelectorAll('div')].map(d => d.scrollTop))")
     check('baobab: pot choice scrolls to top', after_pot < 60, f'after={after_pot}')
     check('baobab: total 5,20 € pot', page.get_by_text('5,20 €', exact=True).count() >= 1)
-    check('baobab: contenu 200 g par pot', page.get_by_text(re.compile('Contenu : 200 g par pot')).count() >= 1)
+    check('baobab: contenu 200 g par pot', page.get_by_text(re.compile('Contenu : 200[ \u00A0]g par pot')).count() >= 1)
     page.screenshot(path='/tmp/shot-baobab-pot.png')
     # Retour au produit initial plus bas dans la fiche
     page.get_by_role('radio', name=re.compile('^Produit initial')).click()

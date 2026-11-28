@@ -1,0 +1,114 @@
+{
+ "schema": 2,
+ "updatedAt": "2026-11-27T18:07:15.259Z",
+ "example": true,
+ "country": null,
+ "currency": "EUR",
+ "rules": {
+  "standard": {
+   "minKg": 500,
+   "stepKg": 100,
+   "maxKg": 100000
+  },
+  "avion": {
+   "minKg": 500,
+   "stepKg": 500,
+   "maxKg": 100000
+  },
+  "bateau": {
+   "minContainers": 1,
+   "stepContainers": 1,
+   "maxContainers": 99,
+   "containerKg": 22000,
+   "containerLabel": "Europe"
+  }
+ },
+ "delivery": {
+  "gp": []
+ },
+ "payments": [
+  {
+   "id": "orange_money",
+   "title": "Orange Money",
+   "detail": "Surtout au Sénégal",
+   "icon": "phone-portrait-outline",
+   "enabled": true
+  },
+  {
+   "id": "wave",
+   "title": "Wave",
+   "detail": "Surtout au Sénégal",
+   "icon": "phone-portrait-outline",
+   "enabled": true
+  },
+  {
+   "id": "virement",
+   "title": "Virement bancaire",
+   "detail": "Depuis l’étranger",
+   "icon": "business-outline",
+   "enabled": true
+  },
+  {
+   "id": "carte",
+   "title": "Carte bancaire",
+   "detail": "Partout",
+   "icon": "card-outline",
+   "enabled": true
+  }
+ ],
+ "productRequest": {
+  "enabled": true,
+  "title": "Vous ne trouvez pas votre produit ?",
+  "body": "Dites-nous quel produit vous recherchez. Nous reviendrons vers vous dès qu’il sera disponible.",
+  "placeholder": "Le produit que vous recherchez",
+  "button": "Envoyer ma demande",
+  "thanks": "Demande envoyée. Nous reviendrons vers vous dès que ce produit sera disponible."
+ },
+ "products": [
+  {
+   "id": "pomme",
+   "name": "Pomme",
+   "variety": "Gala",
+   "category": "fruits",
+   "origin": "Val de Loire",
+   "description": "Croquante, juteuse et franchement sucrée, avec une pointe d’acidité qui la rend irrésistible à la croque. Elle tient aussi très bien à la cuisson : tarte fine, compote sans sucre ajouté, rôtie au four.",
+   "photo": {
+    "asset": "pomme"
+   },
+   "tint": "#E4503F",
+   "months": [
+    1,
+    2,
+    3,
+    4,
+    8,
+    9,
+    10,
+    11,
+    12
+   ],
+   "available": true,
+   "bio": true,
+   "rating": 0,
+   "reviews": 0,
+   "retail": {
+    "price": 3.2,
+    "unit": "kg",
+    "unitLabel": "le kg",
+    "noun": [
+     "kg",
+     "kg"
+    ],
+    "step": 0.5
+   },
+   "wholesale": [],
+   "visibility": {
+    "mode": "monde",
+    "countries": []
+   },
+   "demo": true,
+   "formats": []
+  }
+ ],
+ "campaigns": []
+}
